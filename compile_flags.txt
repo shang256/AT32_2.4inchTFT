@@ -1,0 +1,10 @@
+-Ih:/Projects/AT32F403ACGU7/User
+-Ih:/Projects/AT32F403ACGU7/Drivers
+-Ih:/Projects/AT32F403ACGU7/Libraries/CMSIS
+-Ih:/Projects/AT32F403ACGU7/Libraries/Drivers/inc
+-Ih:/Projects/AT32F403ACGU7/Libraries/lvgl
+-DAT32F403ACGU7
+-DUSE_STDPERIPH_DRIVER
+-DLV_CONF_INCLUDE_SIMPLE
+-std=gnu11
+-fno-builtin
