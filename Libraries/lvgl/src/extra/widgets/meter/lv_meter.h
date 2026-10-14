@@ -15,7 +15,7 @@ extern "C" {
  *********************/
 #include "../../../lvgl.h"
 
-#if LV_USE_METER != 0
+#if 1//LV_USE_METER != 0
 
 /*Testing of dependencies*/
 #if LV_DRAW_COMPLEX == 0

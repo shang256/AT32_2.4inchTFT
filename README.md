@@ -1,93 +1,111 @@
-# AT32F403ACGU7 + ST7789V 240x240 LVGL 演示工程
+# AT32F403ACGU7 + ST7789V 240x240 LVGL + FreeRTOS 演示工程
 
-基于 **Keil MDK5 (ARM Compiler 6)** 与**雅特力官方固件库**的 **LVGL v8.3 官方性能基准测试（lv_demo_benchmark）** 工程。使用**硬件 SPI1（60MHz）** 驱动 ST7789V，自动循环运行 LVGL 典型绘制场景（矩形/阴影/边框/文字/圆弧/图片混合/图片变换等），每个场景实时显示 FPS，全部结束后给出**汇总评分表格**。
+基于 **Keil MDK5 (ARM Compiler 6)** 的 **FreeRTOS + LVGL v8.3** 交互演示工程（AT32F403ACGU7 @ 240MHz，硬件 SPI1 60MHz 驱动 ST7789V）。**旋转编码器**联动 LVGL 界面与 **PWM 背光调光**，屏幕右下角实时显示 FPS。
 
-工程已在本机编译验证通过（0 Error / 0 Warning），HEX 位于 `Project\Objects\AT32F403A_LCD_Demo.hex`。
+工程已编译验证通过（0 Error / 0 Warning），HEX 位于 `Project\Objects\AT32F403A_LCD_Demo.hex`。
 
-## 引脚连接
-
-| 屏幕引脚 | MCU 引脚 | 说明 |
-|---------|---------|------|
-| BLK（背光） | PB1 | 推挽输出，默认高电平点亮 |
-| CS（片选） | PB0 | 推挽输出，低电平选中 |
-| SDA（数据） | PA7 | SPI1_MOSI（复用推挽） |
-| RES（复位） | PA6 | 推挽输出，低电平复位 |
-| SCL（时钟） | PA5 | SPI1_SCK（复用推挽） |
-| DC（数据/命令） | PA4 | 推挽输出，低=命令、高=数据 |
-
-> 注意：PA6 同时是 SPI1_MISO 引脚，本工程 SPI 只发不收，PA6 仅作普通 GPIO 复位脚，两者无冲突。屏幕仅需 3.3V 供电与 GND，VCC 请勿接 5V（除非模组自带稳压）。
-
-## 工程结构
+## 三层架构
 
 ```
 AT32F403ACGU7/
 ├── Project/
-│   └── AT32F403A_LCD_Demo.uvprojx   # Keil5 工程文件（AC6 编译器，生成 HEX）
-├── User/
-│   ├── main.c                       # 主程序：240MHz 时钟配置 + LVGL 动态演示界面
-│   ├── lv_conf.h                    # LVGL 配置（RGB565 字节序交换 / 48KB 内存池 / FPS 监视器）
-│   ├── lv_port_disp.c / .h          # LVGL 显示适配层（绘制缓冲区 + flush 回调）
-│   ├── delay.c / delay.h            # SysTick 1ms 中断（LVGL 心跳）+ DWT 微秒延时
-│   └── at32f403a_407_it.c / .h      # 中断服务函数（SysTick_Handler 提供 LVGL 心跳）
-├── Drivers/
-│   └── lcd_st7789.c / lcd_st7789.h  # ST7789V 驱动（含 LVGL 用的字节流接口）
-├── Libraries/
-│   ├── CMSIS/                       # 官方库：内核头 + 器件寄存器 + 系统时钟
-│   ├── Drivers/                     # 官方库：crm / gpio / spi / misc 外设驱动
-│   └── lvgl/                        # LVGL v8.3.0 源码（按 lv_conf.h 裁剪编译）
-└── MDK/
-    └── startup_at32f403a_407.s      # 官方启动文件（栈已扩至 4KB）
+│   └── AT32F403A_LCD_Demo.uvprojx   # Keil5 工程（分组与目录一一对应）
+├── Application/                       # 应用层：业务与任务编排
+│   ├── app_main.c/h                  # main 入口、时钟配置、FreeRTOS 任务创建
+│   └── app_ui.c/h                    # 编码器联动演示 UI（LVGL 交互逻辑）
+├── Middleware/                        # 中间层：操作系统与图形库的配置/适配
+│   ├── freertos/FreeRTOSConfig.h     # FreeRTOS 配置（240MHz/1kHz tick/20KB 堆）
+│   └── lvgl/                         # LVGL 配置与移植
+│       ├── lv_conf.h                 # 图形库裁剪配置
+│       ├── lv_rtos_tick.h            # LVGL 心跳桥接（FreeRTOS.h → task.h 包含顺序）
+│       └── lv_port_disp.c/h          # 显示适配（绘制缓冲 + flush 回调）
+├── Drivers/                           # 驱动层：外设驱动
+│   ├── lcd_st7789.c/h                # ST7789V 屏幕驱动（SPI1）
+│   ├── backlight.c/h                 # 背光 PWM 驱动（TMR3_CH4 @ PB1）
+│   ├── encoder.c/h                   # 旋转编码器驱动（EXINT 四倍频 + 按键消抖）
+│   ├── delay.c/h                     # DWT 忙等延时（初始化阶段专用）
+│   └── at32f403a_407_it.c/h          # 中断向量分发（SysTick/EXINT）
+├── Libraries/                         # 第三方库
+│   ├── CMSIS/ + Drivers/             # 雅特力官方固件库（含 tmr/exint）
+│   ├── FreeRTOS/                     # FreeRTOS v202212.01 内核（GCC/ARM_CM4F 端口）
+│   └── lvgl/                         # LVGL v8.3.0 源码（含官方 demos）
+└── MDK/startup_at323a_407.s          # 官方启动文件（栈 4KB）
 ```
+
+**分层依赖规则**：`Application → Middleware → Drivers → Libraries`，单向依赖；
+驱动层互不调用，应用层不直接操作寄存器，LVGL 接口只允许在 LVGL 任务中访问。
+
+## 任务划分（FreeRTOS）
+
+| 任务 | 优先级 | 栈 | 职责 |
+|------|-------|-----|------|
+| `encoder_task` | 3 | 1KB | 20ms 轮询编码器驱动，将旋转/按键事件经**FreeRTOS 队列**投递（不触碰 LVGL） |
+| `lvgl_task` | 2 | 4KB | **LVGL 刷图专用线程**：5ms 周期执行 `lv_timer_handler()`，从队列取编码器事件驱动 UI |
+| idle（空闲） | 0 | 512B | FreeRTOS 内置空闲任务 |
+
+线程安全设计：LVGL 非线程安全，所有 UI 访问收敛在 `lvgl_task`；编码器事件经队列跨线程传递（`app_encoder_msg_t`），`encoder_task` 只与驱动层和队列交互。
+
+## 硬件连接
+
+| 外设引脚 | MCU 引脚 | 说明 |
+|---------|---------|------|
+| LCD BLK（背光） | PB1 | **TMR3_CH4 PWM 1kHz 调光**，占空比 20%~100%（默认映射无需 remap） |
+| LCD CS / DC / RES | PB0 / PA4 / PA6 | 推挽输出 |
+| LCD SCL / SDA | PA5 / PA7 | SPI1_SCK / SPI1_MOSI（60MHz） |
+| ENC PUSH | PB4 | 编码器按键（低电平按下，内部上拉 + 计数消抖） |
+| ENC CH_A | PB3 | 编码器 A 相（**JTAG 释放后作 GPIO**，外部上拉 3.3V） |
+| ENC CH_B | PB5 | 编码器 B 相（外部上拉 3.3V） |
+
+> 编码器解码方式：**TMR7 1ms 定时中断同步采样 + 状态表四倍频解码**（相比 EXINT 双边沿中断，同步采样天然滤除 EC11 机械触点抖动，不丢步不乱跳）。界面右上角有 **"A:x B:x P:x"** 实时电平自检行：空闲时应显示 `A:1 B:1 P:1`（上拉 3.3V），旋转/按下时对应数字实时翻转；若恒定不变，说明信号未进入 MCU（检查接线与编码器供电）。
+
+> 注意：PB3/PB4 复位后默认为 JTAG（JTDO/NJTRST），`encoder_init` 通过 `SWJTAG_MUX_010` 切换为仅 SWD 模式释放这两个引脚，**SWD 调试不受影响**（请勿使用 JTAG 调试）。
+
+## 演示效果
+
+上电后界面显示：标题、大号亮度百分比文字、背光亮度条（20%~100%）、翻转按钮：
+
+- **旋转编码器**：调节背光亮度（每格 ±2%），**UI 亮度条、百分比文字与 TMR3 PWM 实际亮度实时同步**
+- **点按编码器**：按钮状态翻转——ON 态蓝色高亮 "BTN: ON"，OFF 态灰色暗显 "BTN: OFF"
+- 屏幕右下角显示 **FPS + CPU 占用率**（FreeRTOS 空闲率换算）
+
+## 关键驱动接口
+
+```c
+/* backlight.h —— 背光 PWM */
+void backlight_init(void);                    /* 初始化 TMR3_CH4 PWM（默认 100%） */
+void backlight_set_percent(uint8_t percent);  /* 设置亮度 20~100（自动限幅） */
+
+/* encoder.h —— 编码器 */
+void encoder_init(void);                      /* 初始化引脚与 EXINT（自动释放 JTAG） */
+int32_t encoder_get_delta(void);              /* 读取并清零旋转增量（4 倍频计步） */
+uint8_t encoder_push_pressed(void);           /* 按键状态（30ms 消抖）：1=按下 */
+uint8_t encoder_push_rising_edge(void);       /* "松开→按下"沿事件（读后清零） */
+
+/* lcd_st7789.h —— 屏幕 */
+void LCD_Init(void);                          /* SPI1 + 复位 + 寄存器初始化 */
+void LCD_WriteAreaBytes(...);                 /* 窗口写 RGB565 字节流（LVGL flush 使用） */
+```
+
+## FreeRTOS / LVGL 移植要点
+
+- **SysTick 接管**：`SysTick_Handler` 调用 `xPortSysTickHandler`；PendSV/SVC 经 `FreeRTOSConfig.h` 宏重定向到 port.c 实现
+- **LVGL 心跳**：`LV_TICK_CUSTOM=1` 直接取 `xTaskGetTickCount()`（RTOS tick 1ms），无需任何 `lv_tick_inc` 调用；包含顺序经 `lv_rtos_tick.h` 桥接
+- **堆**：FreeRTOS heap_4 20KB（任务栈/队列），LVGL TLSF 32KB（UI 对象），绘制缓冲 240x40（18.8KB）
+- **RAM 预算**：总计约 77KB / 96KB；Flash 约 160KB / 1MB
 
 ## 使用步骤
 
-1. **打开工程**：双击 `Project\AT32F403A_LCD_Demo.uvprojx`。
-   - 依赖设备包 `ArteryTek.AT32F403A_407_DFP`（本机已安装 2.2.3；若提示缺包，可在 Pack Installer 中安装，或到[雅特力官网](https://www.arterytek.com)下载）。
-   - 编译器：ARM Compiler 6（MDK V6.16 验证通过；完整编译约 2 分钟）。
-2. **编译**：`Project → Build Target`（F7），生成 `Project\Objects\AT32F403A_LCD_Demo.hex`。
-3. **烧录**：连接调试器（CMSIS-DAP / J-Link 等）后按 LOAD 按钮下载，或使用 ISP 工具烧录 HEX。
-   - 若使用 J-Link 等非 ULINK 调试器，在 `Options for Target → Debug` 选择对应调试器，并在 `Utilities` 页勾选 "Use Debug Driver"。
-4. **现象**：上电后自动开始 benchmark 测试：每个场景显示约数秒，屏幕底部显示**场景名与实时 FPS**；全部场景结束后显示**汇总表格**（各场景 FPS 与平均帧率），停留片刻后自动重新循环。
+1. 双击 `Project\AT32F403A_LCD_Demo.uvprojx` 打开（依赖 `ArteryTek.AT32F403A_407_DFP` 设备包）
+2. `F7` 编译 → 生成 HEX → 烧录（**须使用 SWD 模式调试器**，JTAG 已被编码器占用）
+3. 上电即见交互界面，旋转/按下编码器体验联动效果
 
-## LVGL 移植说明
+## 常见问题
 
-- **版本**：LVGL v8.3.0（`Libraries\lvgl`），按 `lv_conf.h` 裁剪：当前运行官方 **lv_demo_benchmark**（启用 arc/bar/btn/label/img/line/table 控件、flex 布局、默认深色主题、Montserrat 14/28 字体、48KB TLSF 内存池）
-- **显示适配**：`lv_port_disp.c` 注册 240x60 单绘制缓冲区，flush 回调经 `LCD_WriteAreaBytes` 按 RGB565 字节流写入屏幕（`LV_COLOR_16_SWAP=1` 保证高字节在前，无需逐像素组包）
-- **心跳来源**：SysTick 1ms 中断调用 `lv_tick_inc(1)`；主循环 `lv_timer_handler()` + 5ms 间隔轮询
-- **帧率显示**：benchmark 每场景自带 FPS 测量与显示，结束时汇总；`LV_USE_PERF_MONITOR=1` 仍在右下角显示整体 FPS 与 CPU 占用
-- **资源占用**：Flash 约 210KB（含 benchmark 图片与压缩字体）/ RAM 约 84KB（AT32F403ACGU7 为 1MB Flash + 96KB SRAM）
-
-### 帧率说明
-
-SPI1 时钟 60MHz 下，全屏（240x240x16bit）传输约 15.5ms；LVGL 刷新周期设为 16ms（`lv_conf.h` 中 `LV_DISP_DEF_REFR_PERIOD`），**FPS 显示上限约 62**。LVGL 采用**局部刷新**：动画每帧仅重绘变化区域（弧线/进度条/文本），实测帧率主要取决于脏区域面积。若追求更高帧率上限，可将 `LV_DISP_DEF_REFR_PERIOD` 进一步调小（如 10ms → 上限 100FPS），但小于单帧全屏耗时（15.5ms）时全屏重绘会掉帧。若接线较长出现花屏/错位，可将 `lcd_st7789.c` 中 `SPI_MCLK_DIV_2` 改回 `SPI_MCLK_DIV_4`（30MHz）。
-
-## 系统时钟说明
-
-`main.c` 中的 `system_clock_config()` 将系统时钟配置为 **240MHz**（HICK 8MHz 内部时钟 ÷2 经 PLL 60 倍频，无需外部晶振）：
-
-- SCLK / AHB = 240MHz
-- APB2（SPI1 时钟源）= 120MHz
-- SPI1 波特率 = 120MHz ÷ 2 = **60MHz**（全屏填充约 15.5ms，≈64 帧/秒）
-
-若接线较长导致显示异常（花屏/错位），可将 `lcd_st7789.c` 中的 `SPI_MCLK_DIV_2` 改回 `SPI_MCLK_DIV_4`（30MHz）以提升信号完整性。
-
-## 常见问题调整（均在 `Drivers/lcd_st7789.h`）
-
-| 现象 | 调整方法 |
-|------|---------|
-| 显示内容整体偏移（只显示左/上一部分，或出现镜像错位） | 修改 `LCD_X_OFFSET` / `LCD_Y_OFFSET`（默认 0 / 80，多数 240x240 模组为 0/80 或 0/0） |
-| 颜色反相（红变青、白变黑） | 将 `lcd_st7789.c` 初始化中的 `LCD_CMD_INVON`（0x21）改为 `LCD_CMD_INVOFF`（0x20） |
-| 背光不亮（或常亮无法关闭） | 修改 `LCD_BACKLIGHT_ON_LEVEL`：1=高电平点亮，0=低电平点亮 |
-| 横竖屏 / 镜像方向不对 | 修改 `lcd_st7789.c` 中 MADCTL（0x36）参数：0x00 正常 / 0xC0 上下镜像 / 0x60 左右镜像 / 0xA0 旋转 180°（改 MADCTL 后建议同步调整偏移宏） |
-
-## 关键 API
-
-```c
-void LCD_Init(void);              /* 初始化（GPIO+SPI1+复位+寄存器序列） */
-void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2); /* 设置窗口 */
-void LCD_Clear(uint16_t color);   /* 全屏填色 */
-void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color); /* 区域填色 */
-void LCD_SetBacklight(uint8_t on); /* 背光开关 */
-```
-
-RGB565 颜色宏：`COLOR_RED / COLOR_GREEN / COLOR_BLUE / COLOR_WHITE / COLOR_BLACK / COLOR_YELLOW / COLOR_CYAN / COLOR_MAGENTA`（定义见 `lcd_st7789.h`）。
+| 现象 | 处理 |
+|------|------|
+| 编码器完全无反应 | 确认驱动已使能 `CRM_IOMUX_PERIPH_CLOCK`（SWJTAG 释放依赖它，缺失时 PB3/PB4 保持 JTAG 功能） |
+| **A 相恒定不变（B/P 正常）** | 典型的 **SWO 调试探针残留占用 PB3**：调试器开启过 Trace 后 TPIU 配置在复位后仍残留。驱动已在初始化时复位调试跟踪块（关-开 TRCENA）清除 SWO；若需边连调试器边用编码器，请在 Keil `Debug → Settings → Trace` 中取消勾选 Trace |
+| 编码器方向相反 | 交换模组 CH_A/CH_B 接线，或在 `encoder.c` 解码表中取反 |
+| 按键无效 | 确认 PUSH 按下为低电平（内部上拉已启用）；模组若高有效需改 `encoder.c` 判定 |
+| 背光闪烁/偏低 | 低于 20% 的亮度被驱动限幅（防止闪烁），范围可改 `backlight.h` 宏 |
+| 无法 JTAG 调试 | 正常现象：PB3/PB4 已释放为编码器，请改用 SWD |

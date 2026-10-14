@@ -103,9 +103,9 @@ static void lcd_gpio_spi_init(void)
   gpio_init_struct.gpio_pins = LCD_DC_PIN | LCD_RES_PIN;
   gpio_init(LCD_DC_PORT, &gpio_init_struct);
 
-  /* CS=PB0、BLK=PB1 */
-  gpio_init_struct.gpio_pins = LCD_CS_PIN | LCD_BLK_PIN;
-  gpio_init(LCD_BLK_PORT, &gpio_init_struct);
+  /* CS=PB0（背光 BLK=PB1 已移交 backlight 驱动做 TMR3_CH4 PWM 调光） */
+  gpio_init_struct.gpio_pins = LCD_CS_PIN;
+  gpio_init(LCD_CS_PORT, &gpio_init_struct);
 
   /* SPI1 引脚：SCL=PA5（SPI1_SCK）、SDA=PA7（SPI1_MOSI），
      默认映射无需调用 gpio_pin_remap_config */
@@ -291,23 +291,6 @@ void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color
 void LCD_Clear(uint16_t color)
 {
   LCD_Fill(0, 0, LCD_W - 1, LCD_H - 1, color);
-}
-
-/**
-  * @brief  背光开关控制
-  * @param  on：1 打开背光，0 关闭背光
-  * @note   默认高电平点亮；若模组为低电平点亮，
-  *         修改 lcd_st7789.h 中的 LCD_BACKLIGHT_ON_LEVEL 为 0
-  */
-void LCD_SetBacklight(uint8_t on)
-{
-#if (LCD_BACKLIGHT_ON_LEVEL == 1)
-  if(on){ gpio_bits_set(LCD_BLK_PORT, LCD_BLK_PIN); }
-  else  { gpio_bits_reset(LCD_BLK_PORT, LCD_BLK_PIN); }
-#else
-  if(on){ gpio_bits_reset(LCD_BLK_PORT, LCD_BLK_PIN); }
-  else  { gpio_bits_set(LCD_BLK_PORT, LCD_BLK_PIN); }
-#endif
 }
 
 /*********************************************************************

@@ -1,8 +1,13 @@
--Ih:/Projects/AT32F403ACGU7/User
+-Ih:/Projects/AT32F403ACGU7/Application
+-Ih:/Projects/AT32F403ACGU7/Middleware/lvgl
+-Ih:/Projects/AT32F403ACGU7/Middleware/freertos
 -Ih:/Projects/AT32F403ACGU7/Drivers
 -Ih:/Projects/AT32F403ACGU7/Libraries/CMSIS
 -Ih:/Projects/AT32F403ACGU7/Libraries/Drivers/inc
 -Ih:/Projects/AT32F403ACGU7/Libraries/lvgl
+-Ih:/Projects/AT32F403ACGU7/Libraries/lvgl/demos
+-Ih:/Projects/AT32F403ACGU7/Libraries/FreeRTOS/Source/include
+-Ih:/Projects/AT32F403ACGU7/Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F
 -DAT32F403ACGU7
 -DUSE_STDPERIPH_DRIVER
 -DLV_CONF_INCLUDE_SIMPLE

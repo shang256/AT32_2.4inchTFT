@@ -4,12 +4,12 @@
   * @brief    ST7789V 240x240 LCD Çı¶¯½Ó¿Ú£¨Ó²¼ş SPI1 ½Ó¿Ú£©
   *
   * Ó²¼şÁ¬½Ó£¨Ö÷¿Ø AT32F403ACGU7£©£º
-  *   BLK£¨±³¹â£© : PB1   ÍÆÍìÊä³ö£¬¸ßµçÆ½µãÁÁ£¨¿ÉºêÅäÖÃÎªµÍµçÆ½ÓĞĞ§£©
   *   CS  £¨Æ¬Ñ¡£© : PB0   ÍÆÍìÊä³ö£¬µÍµçÆ½Ñ¡ÖĞ
   *   SDA £¨Êı¾İ£© : PA7   SPI1_MOSI£¨¸´ÓÃÍÆÍì£©
   *   RES £¨¸´Î»£© : PA6   ÍÆÍìÊä³ö£¬µÍµçÆ½¸´Î»
   *   SCL £¨Ê±ÖÓ£© : PA5   SPI1_SCK£¨¸´ÓÃÍÆÍì£©
   *   DC  £¨ÃüÁî£© : PA4   ÍÆÍìÊä³ö£¬µÍ=ÃüÁî ¸ß=Êı¾İ
+  *   BLK£¨±³¹â£© : PB1   ÒÑÒÆ½» backlight Çı¶¯£¨TMR3_CH4 PWM µ÷¹â£©
   *
   * ST7789V Îª 320 ĞĞ GRAM£¬¶àÊı 240x240 Ä£×é´ÓµÚ 80 ĞĞ¿ªÊ¼ÏÔÊ¾£¬
   * Í¨¹ı LCD_Y_OFFSET ºêÊÊÅä£¬ÈôÏÔÊ¾ÄÚÈİÆ«ÒÆ»ò´íÎ»¿Éµ÷Õû¸ÃÖµ¡£
@@ -33,8 +33,6 @@ extern "C" {
 #define LCD_X_OFFSET           0        /* ÏÔÊ¾Çø X ÆğÊ¼Æ«ÒÆ£¨¶àÊı 240x240 Ä£×éÎª 0£© */
 #define LCD_Y_OFFSET           0//80       /* ÏÔÊ¾Çø Y ÆğÊ¼Æ«ÒÆ£¨240x240 ÔÚ 320 ĞĞ GRAM ÖĞÆ«ÒÆ 80£© */
 
-#define LCD_BACKLIGHT_ON_LEVEL  1       /* ±³¹âµãÁÁµçÆ½£º1=¸ßµçÆ½µãÁÁ£¬0=µÍµçÆ½µãÁÁ */
-
 #define LCD_SPI                SPI1     /* Ê¹ÓÃµÄÍâÉè£ºSPI1£¨SCL=PA5/SPI1_SCK£¬SDA=PA7/SPI1_MOSI£© */
 
 /* ---------------- Òı½Å¶¨Òå ---------------- */
@@ -47,9 +45,6 @@ extern "C" {
 
 #define LCD_CS_PORT            GPIOB    /* CS£¨Æ¬Ñ¡£©¶Ë¿Ú */
 #define LCD_CS_PIN             GPIO_PINS_0
-
-#define LCD_BLK_PORT           GPIOB    /* BLK£¨±³¹â£©¶Ë¿Ú */
-#define LCD_BLK_PIN            GPIO_PINS_1
 
 /* ---------------- ST7789V ³£ÓÃÃüÁî ---------------- */
 
@@ -85,7 +80,9 @@ void LCD_WriteData16(uint16_t data);                       /* Ğ´ 16bit Êı¾İ£¨¸ß×
 void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2); /* ÉèÖÃÏÔÊ¾´°¿Ú */
 void LCD_Clear(uint16_t color);                            /* È«ÆÁÌî³äµ¥É« */
 void LCD_Fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color); /* ÇøÓòÌî³äµ¥É« */
-void LCD_SetBacklight(uint8_t on);                        /* ±³¹â¿ª¹Ø£¨1 ¿ª / 0 ¹Ø£© */
+/* ±³¹âÒÑ¶ÀÁ¢Îª backlight Çı¶¯£¨TMR3_CH4 PWM µ÷¹â, ¼û backlight.h£©,
+   lcd_st7789 Ö»¸ºÔğÏÔÊ¾²¿·Ö */
+
 void LCD_WriteAreaBytes(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, const uint8_t *data, uint32_t len); /* ´°¿ÚĞ´Ô­Ê¼×Ö½ÚÁ÷£¨RGB565 ´ó¶Ë£© */
 
 #ifdef __cplusplus
