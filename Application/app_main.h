@@ -27,6 +27,18 @@ typedef struct
 /* 编码器事件队列(应用层共享, 由 app_main 创建) */
 extern QueueHandle_t g_encoder_queue;
 
+/* SGP30 传感器数据队列项: SGP30 任务 -> LVGL 任务 单向传递
+   (统一使用 32 位字段, 避免混合宽度带来的结构体填充) */
+typedef struct
+{
+  uint32_t  eco2;         /* eCO2 浓度(ppm) */
+  uint32_t  tvoc;         /* TVOC 浓度(ppb) */
+  uint32_t  valid;        /* 1=数据有效 0=读取失败(UI 显示 "--") */
+} app_sensor_msg_t;
+
+/* SGP30 传感器数据队列(应用层共享, 由 app_main 创建) */
+extern QueueHandle_t g_sensor_queue;
+
 #ifdef __cplusplus
 }
 #endif

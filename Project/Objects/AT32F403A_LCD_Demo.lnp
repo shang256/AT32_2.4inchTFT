@@ -6,6 +6,8 @@
 ".\objects\backlight.o"
 ".\objects\encoder.o"
 ".\objects\delay.o"
+".\objects\sw_i2c.o"
+".\objects\sgp30.o"
 ".\objects\at32f403a_407_it.o"
 ".\objects\tasks.o"
 ".\objects\queue.o"

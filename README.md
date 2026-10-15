@@ -22,7 +22,9 @@ AT32F403ACGU7/
 ├── Drivers/                           # 驱动层：外设驱动
 │   ├── lcd_st7789.c/h                # ST7789V 屏幕驱动（SPI1）
 │   ├── backlight.c/h                 # 背光 PWM 驱动（TMR3_CH4 @ PB1）
-│   ├── encoder.c/h                   # 旋转编码器驱动（EXINT 四倍频 + 按键消抖）
+│   ├── encoder.c/h                   # 旋转编码器驱动（TMR7 同步采样四倍频 + 按键消抖）
+│   ├── sw_i2c.c/h                    # 软件模拟 I2C 主机（SCL=PA2 / SDA=PA3, 开漏 ~100kHz）
+│   ├── sgp30.c/h                     # SGP30 空气质量传感器驱动（eCO2/TVOC, 移植自 ESP-IDF）
 │   ├── delay.c/h                     # DWT 忙等延时（初始化阶段专用）
 │   └── at32f403a_407_it.c/h          # 中断向量分发（SysTick/EXINT）
 ├── Libraries/                         # 第三方库
@@ -40,10 +42,11 @@ AT32F403ACGU7/
 | 任务 | 优先级 | 栈 | 职责 |
 |------|-------|-----|------|
 | `encoder_task` | 3 | 1KB | 20ms 轮询编码器驱动，将旋转/按键事件经**FreeRTOS 队列**投递（不触碰 LVGL） |
-| `lvgl_task` | 2 | 4KB | **LVGL 刷图专用线程**：5ms 周期执行 `lv_timer_handler()`，从队列取编码器事件驱动 UI |
+| `lvgl_task` | 2 | 4KB | **LVGL 刷图专用线程**：5ms 周期执行 `lv_timer_handler()`，从队列取编码器/传感器事件驱动 UI |
+| `sgp30_task` | 1 | 1KB | 1s 周期读取 SGP30 eCO2/TVOC，经队列投递 LVGL 线程显示（12ms 忙等可被高优先级任务抢占） |
 | idle（空闲） | 0 | 512B | FreeRTOS 内置空闲任务 |
 
-线程安全设计：LVGL 非线程安全，所有 UI 访问收敛在 `lvgl_task`；编码器事件经队列跨线程传递（`app_encoder_msg_t`），`encoder_task` 只与驱动层和队列交互。
+线程安全设计：LVGL 非线程安全，所有 UI 访问收敛在 `lvgl_task`；编码器事件经队列跨线程传递（`app_encoder_msg_t`），传感器数据经队列跨线程传递（`app_sensor_msg_t`），生产者任务只与驱动层和队列交互。
 
 ## 硬件连接
 
@@ -52,9 +55,11 @@ AT32F403ACGU7/
 | LCD BLK（背光） | PB1 | **TMR3_CH4 PWM 1kHz 调光**，占空比 20%~100%（默认映射无需 remap） |
 | LCD CS / DC / RES | PB0 / PA4 / PA6 | 推挽输出 |
 | LCD SCL / SDA | PA5 / PA7 | SPI1_SCK / SPI1_MOSI（60MHz） |
-| ENC PUSH | PB4 | 编码器按键（低电平按下，内部上拉 + 计数消抖） |
-| ENC CH_A | PB3 | 编码器 A 相（**JTAG 释放后作 GPIO**，外部上拉 3.3V） |
+| ENC PUSH | PB3 | 编码器按键（低电平按下，内部上拉 + 计数消抖；**JTAG 释放后作 GPIO**） |
+| ENC CH_A | PB4 | 编码器 A 相（**JTAG 释放后作 GPIO**，外部上拉 3.3V） |
 | ENC CH_B | PB5 | 编码器 B 相（外部上拉 3.3V） |
+| SGP30 SCL | PA2 | 软件 I2C 时钟（开漏输出，依赖模块板载上拉） |
+| SGP30 SDA | PA3 | 软件 I2C 数据（开漏输出，依赖模块板载上拉） |
 
 > 编码器解码方式：**TMR7 1ms 定时中断同步采样 + 状态表四倍频解码**（相比 EXINT 双边沿中断，同步采样天然滤除 EC11 机械触点抖动，不丢步不乱跳）。界面右上角有 **"A:x B:x P:x"** 实时电平自检行：空闲时应显示 `A:1 B:1 P:1`（上拉 3.3V），旋转/按下时对应数字实时翻转；若恒定不变，说明信号未进入 MCU（检查接线与编码器供电）。
 
@@ -66,6 +71,7 @@ AT32F403ACGU7/
 
 - **旋转编码器**：调节背光亮度（每格 ±2%），**UI 亮度条、百分比文字与 TMR3 PWM 实际亮度实时同步**
 - **点按编码器**：按钮状态翻转——ON 态蓝色高亮 "BTN: ON"，OFF 态灰色暗显 "BTN: OFF"
+- **SGP30 空气质量实时显示**：亮度大字与亮度条之间左右分列显示 **eCO2（ppm，绿色）** 与 **TVOC（ppb，青色）**，1s 周期刷新；初始化后约 15s 预热期固定显示 400ppm/0ppb（数据手册定义的正常现象）
 - 屏幕右下角显示 **FPS + CPU 占用率**（FreeRTOS 空闲率换算）
 
 ## 关键驱动接口
@@ -80,6 +86,10 @@ void encoder_init(void);                      /* 初始化引脚与 EXINT（自动释放 JT
 int32_t encoder_get_delta(void);              /* 读取并清零旋转增量（4 倍频计步） */
 uint8_t encoder_push_pressed(void);           /* 按键状态（30ms 消抖）：1=按下 */
 uint8_t encoder_push_rising_edge(void);       /* "松开→按下"沿事件（读后清零） */
+
+/* sgp30.h —— SGP30 空气质量传感器（软件 I2C: SCL=PA2 / SDA=PA3） */
+sgp30_status_t sgp30_init(void);              /* 初始化 I2C + Init_air_quality 命令(0x2003) */
+sgp30_status_t sgp30_read(sgp30_data_t *data);/* 测量(0x2008)+CRC 校验, 读 eCO2(ppm)/TVOC(ppb) */
 
 /* lcd_st7789.h —— 屏幕 */
 void LCD_Init(void);                          /* SPI1 + 复位 + 寄存器初始化 */
@@ -109,3 +119,5 @@ void LCD_WriteAreaBytes(...);                 /* 窗口写 RGB565 字节流（LVGL flus
 | 按键无效 | 确认 PUSH 按下为低电平（内部上拉已启用）；模组若高有效需改 `encoder.c` 判定 |
 | 背光闪烁/偏低 | 低于 20% 的亮度被驱动限幅（防止闪烁），范围可改 `backlight.h` 宏 |
 | 无法 JTAG 调试 | 正常现象：PB3/PB4 已释放为编码器，请改用 SWD |
+| 屏幕一直显示 "eCO2: -- ppm" | ① 检查 SGP30 模块 SCL→PA2 / SDA→PA3 / VCC→3.3V / GND 共地；② 模块须带板载上拉（PA2/PA3 开漏依赖上拉，`sgp30_init` 会做总线空闲检测）；③ 初始化失败时 `sgp30_task` 每 2s 自动重试，接好后约 2s 内恢复显示 |
+| eCO2/TVOC 恒为 400ppm/0ppb | SGP30 上电预热期（约 15s）的固定输出，属正常现象，无需处理 |

@@ -1,7 +1,7 @@
 Dependencies for Project 'AT32F403A_LCD_Demo', Target 'AT32F403A_LCD_Demo': (DO NOT MODIFY !)
 CompilerVersion: 6160000::V6.16::ARMCLANG
-F (..\Application\app_main.c)(0x6ACEDC80)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_main.o -MD)
-I (..\Application\app_main.h)(0x6ACEDC71)
+F (..\Application\app_main.c)(0x6AD036FB)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_main.o -MD)
+I (..\Application\app_main.h)(0x6AD036DA)
 I (..\Libraries\FreeRTOS\Source\include\FreeRTOS.h)(0x69C63FF1)
 I (C:\Keil_v5\ARM\ARMCLANG\include\stddef.h)(0x6035A4A8)
 I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
@@ -14,7 +14,7 @@ I (..\Libraries\FreeRTOS\Source\include\mpu_wrappers.h)(0x69C63FF1)
 I (..\Libraries\FreeRTOS\Source\include\task.h)(0x69C63FF1)
 I (..\Libraries\FreeRTOS\Source\include\list.h)(0x69C63FF1)
 I (..\Libraries\FreeRTOS\Source\include\queue.h)(0x69C63FF1)
-I (..\Application\app_ui.h)(0x6ACEE8B8)
+I (..\Application\app_ui.h)(0x6AD03701)
 I (..\Libraries\lvgl\lvgl.h)(0x689B5B00)
 I (..\Libraries\lvgl\src\misc\lv_log.h)(0x689B5B00)
 I (..\Libraries\lvgl\src\misc\..\lv_conf_internal.h)(0x689B5B00)
@@ -260,9 +260,10 @@ I (..\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6923BB26)
 I (..\Drivers\lcd_st7789.h)(0x6ACEDAE2)
 I (..\Drivers\backlight.h)(0x6ACEDA71)
 I (..\Drivers\encoder.h)(0x6ACEF563)
+I (..\Drivers\sgp30.h)(0x6AD036B7)
 I (..\Middleware\lvgl\lv_port_disp.h)(0x6ACE09EB)
-F (..\Application\app_ui.c)(0x6ACF2DE9)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_ui.o -MD)
-I (..\Application\app_ui.h)(0x6ACEE8B8)
+F (..\Application\app_ui.c)(0x6AD03717)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_ui.o -MD)
+I (..\Application\app_ui.h)(0x6AD03701)
 I (..\Libraries\lvgl\lvgl.h)(0x689B5B00)
 I (..\Libraries\lvgl\src\misc\lv_log.h)(0x689B5B00)
 I (..\Libraries\lvgl\src\misc\..\lv_conf_internal.h)(0x689B5B00)
@@ -912,6 +913,89 @@ I (..\Libraries\Drivers\inc\at32f403a_407_acc.h)(0x6923BB26)
 I (..\Libraries\Drivers\inc\at32f403a_407_misc.h)(0x6923BB26)
 I (..\Libraries\Drivers\inc\at32f403a_407_usb.h)(0x6923BB26)
 I (..\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6923BB26)
+F (..\Drivers\sw_i2c.c)(0x6AD03891)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/sw_i2c.o -MD)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stddef.h)(0x6035A4A8)
+I (..\Drivers\sw_i2c.h)(0x6AD03687)
+I (..\Libraries\CMSIS\at32f403a_407.h)(0x6923BB28)
+I (..\Libraries\CMSIS\core_cm4.h)(0x5D2590B6)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
+I (..\Libraries\CMSIS\cmsis_version.h)(0x5D2590B6)
+I (..\Libraries\CMSIS\cmsis_compiler.h)(0x5D2590B6)
+I (..\Libraries\CMSIS\cmsis_armclang.h)(0x5D2590B6)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_compat.h)(0x5EE13552)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_acle.h)(0x6035A4A4)
+I (..\Libraries\CMSIS\mpu_armv7.h)(0x5C8F4DD4)
+I (..\Libraries\CMSIS\system_at32f403a_407.h)(0x6923BB28)
+I (..\Libraries\Drivers\inc\at32f403a_407_def.h)(0x6923BB26)
+I (..\Libraries\CMSIS\at32f403a_407_conf.h)(0x6923BB28)
+I (..\Libraries\Drivers\inc\at32f403a_407_crm.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_tmr.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_rtc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_bpr.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_gpio.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_i2c.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_usart.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_pwc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_can.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_adc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_dac.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_spi.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_dma.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_debug.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_flash.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_crc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_wwdt.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_wdt.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_exint.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_sdio.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_xmc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_acc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_misc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_usb.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6923BB26)
+I (..\Drivers\delay.h)(0x6ACEDA56)
+F (..\Drivers\sgp30.c)(0x6AD037CB)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/sgp30.o -MD)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stddef.h)(0x6035A4A8)
+I (..\Drivers\sgp30.h)(0x6AD036B7)
+I (..\Libraries\CMSIS\at32f403a_407.h)(0x6923BB28)
+I (..\Libraries\CMSIS\core_cm4.h)(0x5D2590B6)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
+I (..\Libraries\CMSIS\cmsis_version.h)(0x5D2590B6)
+I (..\Libraries\CMSIS\cmsis_compiler.h)(0x5D2590B6)
+I (..\Libraries\CMSIS\cmsis_armclang.h)(0x5D2590B6)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_compat.h)(0x5EE13552)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_acle.h)(0x6035A4A4)
+I (..\Libraries\CMSIS\mpu_armv7.h)(0x5C8F4DD4)
+I (..\Libraries\CMSIS\system_at32f403a_407.h)(0x6923BB28)
+I (..\Libraries\Drivers\inc\at32f403a_407_def.h)(0x6923BB26)
+I (..\Libraries\CMSIS\at32f403a_407_conf.h)(0x6923BB28)
+I (..\Libraries\Drivers\inc\at32f403a_407_crm.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_tmr.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_rtc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_bpr.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_gpio.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_i2c.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_usart.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_pwc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_can.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_adc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_dac.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_spi.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_dma.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_debug.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_flash.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_crc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_wwdt.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_wdt.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_exint.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_sdio.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_xmc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_acc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_misc.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_usb.h)(0x6923BB26)
+I (..\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6923BB26)
+I (..\Drivers\sw_i2c.h)(0x6AD03687)
+I (..\Drivers\delay.h)(0x6ACEDA56)
 F (..\Drivers\at32f403a_407_it.c)(0x6ACEEAA9)(-xc -std=gnu11 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-gdwarf-3 -O1 -ffunction-sections -Weverything -Wno-packed -Wno-reserved-id-macro -Wno-unused-macros -Wno-documentation-unknown-command -Wno-documentation -Wno-license-management -Wno-parentheses-equality -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/at32f403a_407_it.o -MD)
 I (..\Drivers\at32f403a_407_it.h)(0x6ACEEAA3)
 I (..\Libraries\CMSIS\at32f403a_407.h)(0x6923BB28)

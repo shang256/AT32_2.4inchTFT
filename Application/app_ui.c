@@ -28,6 +28,8 @@ static lv_obj_t  *s_btn;              // 点按翻转按钮
 static lv_obj_t  *s_btn_label;       // 按钮文字(子对象)
 static lv_obj_t  *s_hint_label;      // 底部操作提示
 static lv_obj_t  *s_debug_label;     // 引脚电平自检行(硬件排查用)
+static lv_obj_t  *s_eco2_label;      // SGP30 eCO2 显示(左)
+static lv_obj_t  *s_tvoc_label;      // SGP30 TVOC 显示(右)
 
 /* 按钮翻转状态: 1=ON(蓝高亮) 0=OFF(灰暗显) */
 static uint8_t s_btn_state = 0;
@@ -185,6 +187,17 @@ void app_ui_init(void)
   lv_obj_align(s_debug_label, LV_ALIGN_TOP_RIGHT, -4, 4);
   lv_timer_create(debug_pin_timer_cb, 100, NULL);
 
+  /* ---- Step5.2: SGP30 传感器显示标签(亮度大字与亮度条之间, 左右分列) ---- */
+  s_eco2_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(s_eco2_label, lv_color_hex(0x4CAF50), 0);
+  lv_label_set_text(s_eco2_label, "eCO2: -- ppm");
+  lv_obj_align(s_eco2_label, LV_ALIGN_TOP_LEFT, 8, 78);
+
+  s_tvoc_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(s_tvoc_label, lv_color_hex(0x26C6DA), 0);
+  lv_label_set_text(s_tvoc_label, "TVOC: -- ppb");
+  lv_obj_align(s_tvoc_label, LV_ALIGN_TOP_RIGHT, -8, 78);
+
   /* ---- Step6: 刷新初始显示(亮度 100%, 按钮 OFF) ---- */
   app_ui_bl_refresh();
   app_ui_btn_refresh();
@@ -220,5 +233,38 @@ void app_ui_encoder_event(int32_t delta, int32_t push_pressed)
   {
     s_btn_state = (uint8_t)(s_btn_state ? 0 : 1);
     app_ui_btn_refresh();
+  }
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_sgp30_update
+ * 入口参数: eco2    eCO2 浓度(ppm)
+ *           tvoc    TVOC 浓度(ppb)
+ *           valid   1=本次数据有效 0=读取失败
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 刷新 SGP30 传感器的 eCO2/TVOC 显示标签
+ * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
+ *           读取失败/模块未就绪时显示 "--" 便于区分; 传感器初始化后
+ *           约 15s 预热期内固定显示 400ppm/0ppb, 属数据手册定义的正常
+ *           现象, 并非驱动异常
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月15日
+ *     修改内容: 新增函数(SGP30 移植需求)
+ **********************************************************************/
+void app_ui_sgp30_update(uint32_t eco2, uint32_t tvoc, uint32_t valid)
+{
+  /* ---- Step1: 数据有效 -> 显示 eCO2 与 TVOC 实测值 ---- */
+  if(valid != 0U)
+  {
+    lv_label_set_text_fmt(s_eco2_label, "eCO2: %u ppm", (unsigned)eco2);
+    lv_label_set_text_fmt(s_tvoc_label, "TVOC: %u ppb", (unsigned)tvoc);
+  }
+  /* ---- Step2: 数据无效 -> 占位符提示, 不显示陈旧数据 ---- */
+  else
+  {
+    lv_label_set_text(s_eco2_label, "eCO2: -- ppm");
+    lv_label_set_text(s_tvoc_label, "TVOC: -- ppb");
   }
 }

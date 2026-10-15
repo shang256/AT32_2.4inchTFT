@@ -6,13 +6,15 @@
   * 分层说明（本工程三层架构）：
   *   Application（本层）  : 业务任务编排与 UI 逻辑
   *   Middleware（中间层） : FreeRTOS 配置 / LVGL 配置与显示适配
-  *   Drivers（驱动层）    : LCD / 背光 PWM / 编码器 / 延时 / 中断分发
+  *   Drivers（驱动层）    : LCD / 背光 PWM / 编码器 / SGP30 / 延时 / 中断分发
   *
   * 任务划分：
   *   1. encoder_task（优先级 3）: 20ms 轮询编码器驱动, 将旋转/按键事件
   *      投递到 FreeRTOS 队列 —— 不直接触碰 LVGL（保证线程安全）；
   *   2. lvgl_task（优先级 2）  : LVGL 刷图专用线程, 周期执行
-  *      lv_timer_handler(), 并从队列取出编码器事件驱动 UI 联动。
+  *      lv_timer_handler(), 并从队列取出编码器/传感器事件驱动 UI 联动；
+  *   3. sgp30_task（优先级 1） : 1s 周期读取 SGP30 的 eCO2/TVOC 并投递
+  *      队列(驱动内部 12ms 忙等可被高优先级任务随时抢占, 不影响 UI)。
   **************************************************************************
   */
 
@@ -22,15 +24,20 @@
 #include "lcd_st7789.h"
 #include "backlight.h"
 #include "encoder.h"
+#include "sgp30.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
 
 /* 全局: 编码器事件队列(驱动层事件 -> LVGL 线程) */
 QueueHandle_t g_encoder_queue = NULL;
 
+/* 全局: SGP30 传感器数据队列(传感器任务 -> LVGL 线程) */
+QueueHandle_t g_sensor_queue = NULL;
+
 /* 任务栈大小(字: 4 字节) */
 #define TASK_STACK_LVGL    (uint16_t)(1024)   /* LVGL 任务 4KB 栈 */
 #define TASK_STACK_ENCODER (uint16_t)(256)    /* 编码器任务 1KB 栈 */
+#define TASK_STACK_SGP30   (uint16_t)(256)    /* SGP30 任务 1KB 栈 */
 
 /*********************************************************************
  * 函 数 名: system_clock_config
@@ -115,22 +122,75 @@ __NO_RETURN static void encoder_task(void *arg)
 }
 
 /*********************************************************************
+ * 函 数 名: sgp30_task
+ * 入口参数: arg     任务参数(未使用)
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: SGP30 传感器任务: 初始化传感器后以 1s 周期测量 eCO2/TVOC,
+ *           将结果投递到队列由 LVGL 任务显示
+ * 说    明: 1. 数据手册要求初始化后以 1s 周期持续测量以维护基线,
+ *              首个约 15s 为预热期(固定输出 400ppm/0ppb, 属正常);
+ *           2. 本任务优先级最低(1), 驱动内部 delay_ms 忙等(约 22ms)
+ *              期间可随时被编码器/LVGL 任务抢占, 不阻塞 UI 刷新;
+ *           3. 初始化失败(模块未接/总线异常)时每 2s 重试, 屏幕显示 "--"。
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月15日
+ *     修改内容: 新增函数(SGP30 移植需求)
+ **********************************************************************/
+__NO_RETURN static void sgp30_task(void *arg)
+{
+  app_sensor_msg_t msg;                            // 待投递的传感器数据
+  sgp30_data_t     data;                           // 驱动层测量结果
+  (void)arg;
+
+  /* ---- Step1: 初始化 SGP30(失败则周期重试, 直到模块就绪) ---- */
+  while(sgp30_init() != SGP30_OK)
+  {
+    vTaskDelay(pdMS_TO_TICKS(2000));
+  }
+
+  while(1)
+  {
+    /* ---- Step2: 读取一次空气质量测量结果并组装消息 ---- */
+    if(sgp30_read(&data) == SGP30_OK)
+    {
+      msg.eco2  = (uint32_t)data.eco2;
+      msg.tvoc  = (uint32_t)data.tvoc;
+      msg.valid = 1U;
+    }
+    else
+    {
+      msg.valid = 0U;                            /* 失败: UI 层显示 "--" */
+    }
+
+    /* ---- Step3: 非阻塞投递(队列满则丢弃旧值, 保留最新趋势) ---- */
+    xQueueSend(g_sensor_queue, &msg, 0);
+
+    /* ---- Step4: 1s 测量周期, 维持 SGP30 基线更新 ---- */
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+/*********************************************************************
  * 函 数 名: lvgl_task
  * 入口参数: arg     任务参数(未使用)
  * 出口参数: 无
  * 返 回 值: void
  * 函数功能: LVGL 刷图专用线程: 周期执行 lv_timer_handler 驱动
- *           刷新/动画/输入处理, 并转发编码器事件给 UI 层
+ *           刷新/动画/输入处理, 并转发编码器/传感器事件给 UI 层
  * 说    明: LVGL 非线程安全, 所有 UI 访问都收敛在本任务
- *           (编码器事件经队列从 encoder_task 送入)
+ *           (编码器/SGP30 事件经队列从各自任务送入)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
- *     修改内容: 新增函数(FreeRTOS 引入)
+ *     修改内容: 新增函数(FreeRTOS 引入);
+ *             2026年10月15日新增 SGP30 队列消费转发
  **********************************************************************/
 __NO_RETURN static void lvgl_task(void *arg)
 {
   app_encoder_msg_t msg;                          // 从队列收到的事件
+  app_sensor_msg_t  smsg;                         // 从队列收到的传感器数据
   (void)arg;
 
   while(1)
@@ -141,10 +201,16 @@ __NO_RETURN static void lvgl_task(void *arg)
       app_ui_encoder_event(msg.delta, msg.push_pressed);
     }
 
-    /* ---- Step2: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
+    /* ---- Step2: 非阻塞收取 SGP30 传感器数据, 转发 UI 显示 ---- */
+    while(xQueueReceive(g_sensor_queue, &smsg, 0) == pdTRUE)
+    {
+      app_ui_sgp30_update(smsg.eco2, smsg.tvoc, smsg.valid);
+    }
+
+    /* ---- Step3: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
     lv_timer_handler();
 
-    /* ---- Step3: 5ms 周期, 平衡响应速度与 CPU 占用 ---- */
+    /* ---- Step4: 5ms 周期, 平衡响应速度与 CPU 占用 ---- */
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -179,10 +245,12 @@ int main(void)
   /* ---- Step4: 应用层初始化: 创建交互演示 UI(必须在 LVGL 任务内首次刷新前) ---- */
   app_ui_init();
 
-  /* ---- Step5: 创建编码器事件队列与两个应用任务 ---- */
+  /* ---- Step5: 创建编码器事件队列与三个应用任务 ---- */
   g_encoder_queue = xQueueCreate(8, sizeof(app_encoder_msg_t));
-  xTaskCreate(encoder_task, "ENC", TASK_STACK_ENCODER, NULL, 3, NULL);
+  g_sensor_queue  = xQueueCreate(4, sizeof(app_sensor_msg_t));
+  xTaskCreate(encoder_task, "ENC",  TASK_STACK_ENCODER, NULL, 3, NULL);
   xTaskCreate(lvgl_task,    "LVGL", TASK_STACK_LVGL,    NULL, 2, NULL);
+  xTaskCreate(sgp30_task,   "SGP",  TASK_STACK_SGP30,   NULL, 1, NULL);
 
   /* ---- Step6: 启动 FreeRTOS 调度器(不再返回) ---- */
   vTaskStartScheduler();
