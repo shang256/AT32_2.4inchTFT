@@ -5,6 +5,7 @@
 ".\objects\lcd_st7789.o"
 ".\objects\backlight.o"
 ".\objects\encoder.o"
+".\objects\encoder_accel.o"
 ".\objects\delay.o"
 ".\objects\sw_i2c.o"
 ".\objects\sgp30.o"

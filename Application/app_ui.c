@@ -28,6 +28,7 @@
 #include "app_ui.h"
 #include "backlight.h"
 #include "encoder.h"
+#include "encoder_accel.h"
 
 /* 界面控件句柄(LVGL 任务上下文访问, 无需保护) */
 static lv_obj_t  *s_title_label;      // 顶部标题
@@ -47,8 +48,8 @@ static uint8_t s_btn_state = 0;
 /* 当前亮度百分比(缓存, 初始与背光驱动默认一致) */
 static int8_t s_bl_value = 100;
 
-/* 编码器变速调节的计数累积器(不足一格的部分保留, 保证慢速精准不丢步) */
-static int32_t s_enc_accum = 0;
+/* 背光调节的编码器变速器实例(变速逻辑见 encoder_accel 通用模块) */
+static encoder_accel_t s_bl_accel;
 
 /* 按钮颜色渐变动画的起止色(动画回调中取用) */
 static lv_color_t s_btn_color_from;
@@ -562,6 +563,9 @@ static void debug_pin_timer_cb(lv_timer_t *timer)
  **********************************************************************/
 void app_ui_init(void)
 {
+  /* ---- Step0: 初始化背光编码器变速器实例(变速逻辑见 encoder_accel 模块) ---- */
+  encoder_accel_init(&s_bl_accel);
+
   /* ---- Step1: 顶部标题 ---- */
   s_title_label = lv_label_create(lv_scr_act());
   lv_label_set_text(s_title_label, "Demo~");
@@ -644,51 +648,32 @@ void app_ui_init(void)
  * 入口参数: delta   编码器旋转增量(4 倍频计步, 正=顺时针)
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 将旋转增量按"变速"映射为亮度变化并刷新 UI
- * 说    明: 慢速(每周期 |delta| 小)时每格(4 计数)=1% 精准微调;
- *           快速(每周期 |delta| 大)时每格步进按速度放大, 实现
- *           "慢拧精准、快拧加速"的手感; 不足一格的计数由 s_enc_accum
- *           累积, 保证任意转速下不丢步不跳变
+ * 函数功能: 将编码器增量经变速模块换算后应用到背光亮度并刷新 UI
+ * 说    明: 变速策略(慢速精准/快速加速)由通用模块 encoder_accel 提供,
+ *           本函数只负责把"步数"换算成亮度 1% 并限幅刷新
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月17日
  *     修改内容: 新增函数(变速调节需求)
+ *              变速逻辑抽离至 encoder_accel 通用模块
  **********************************************************************/
 static void encoder_apply_delta(int32_t delta)
 {
-  int32_t mag;      /* 本周期速度(|delta|) */
-  int32_t step;     /* 每格(4 计数)对应的百分比步进 */
-  int32_t detents;  /* 完整格数 */
-  int32_t change;   /* 本次亮度变化量 */
+  int32_t change;   /* 变速后的步数(1 步 = 1% 亮度) */
   int32_t new_val;  /* 限幅后的亮度中间值 */
 
-  if(delta == 0){ return; }
+  /* ---- Step1: 经通用变速模块换算为步数 ---- */
+  change = encoder_accel_feed(&s_bl_accel, delta);
+  if(change == 0){ return; }
 
-  mag = (delta < 0) ? -delta : delta;
+  /* ---- Step2: 应用到亮度并限幅(中间量用 int32 避免 int8 溢出) ---- */
+  new_val = (int32_t)s_bl_value + change;
+  if(new_val > BACKLIGHT_MAX_PERCENT){ new_val = BACKLIGHT_MAX_PERCENT; }
+  if(new_val < BACKLIGHT_MIN_PERCENT){ new_val = BACKLIGHT_MIN_PERCENT; }
+  s_bl_value = (int8_t)new_val;
 
-  /* ---- Step1: 按速度分档确定每格步进(阈值可按手感调整) ---- */
-  if(mag <= 4)       { step = 1; }  /* 慢速: 1格=1% 精准微调 */
-  else if(mag <= 12) { step = 2; }  /* 中速: 1格=2% */
-  else if(mag <= 32) { step = 8; }  /* 快速: 1格=8% */
-  else               { step = 16; }  /* 极快: 1格=16% */
-
-  /* ---- Step2: 累积计数, 每满一格(4计数)按 step 提取变化 ---- */
-  s_enc_accum += delta;
-  detents = s_enc_accum / 4;
-  if(detents != 0)
-  {
-    s_enc_accum -= detents * 4;      /* 保留不足一格的余数(精准) */
-    change = detents * step;
-
-    /* ---- Step3: 应用到亮度并限幅(中间量用 int32 避免 int8 溢出) ---- */
-    new_val = (int32_t)s_bl_value + change;
-    if(new_val > BACKLIGHT_MAX_PERCENT){ new_val = BACKLIGHT_MAX_PERCENT; }
-    if(new_val < BACKLIGHT_MIN_PERCENT){ new_val = BACKLIGHT_MIN_PERCENT; }
-    s_bl_value = (int8_t)new_val;
-
-    /* ---- Step4: 刷新弧/数字/颜色/动画 ---- */
-    app_ui_bl_refresh();
-  }
+  /* ---- Step3: 刷新弧/数字/颜色/动画 ---- */
+  app_ui_bl_refresh();
 }
 
 /*********************************************************************
