@@ -8,14 +8,17 @@
   *      FreeRTOSConfig.h 宏重定向（本文件不重复定义），
   *      SysTick 在此调用 xPortSysTickHandler 供调度器计数心跳；
   *   2. TMR7_GLOBAL(编码器 1ms 采样中断) 分发到 encoder.c 处理；
-  *      编码器三路引脚(PB3/PB4/PB5)不再使用 EXINT 中断。
+  *      编码器 A/B 相不再使用 EXINT 中断；
+  *   3. EXINT3(PB3, PUSH 按键) 仅用于停机模式唤醒，中断内只清
+  *      标志不做业务——按键状态由 TMR7 同步采样维护，唤醒后任务
+  *      循环按采样结果处理。
   **************************************************************************
   */
 
-#include "at32f403a_407_it.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "encoder.h"
+  #include "at32f403a_407_it.h"
+  #include "FreeRTOS.h"
+  #include "task.h"
+  #include "encoder.h"
 
 /* FreeRTOS port.c 提供的 SysTick 处理函数(定义无对外原型, 此处前置声明) */
 extern void xPortSysTickHandler(void);
@@ -111,4 +114,24 @@ void SysTick_Handler(void)
 void TMR7_GLOBAL_IRQHandler(void)
 {
   encoder_tick_isr();
+}
+
+/*********************************************************************
+ * 函 数 名: EXINT3_IRQHandler
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: PB3(PUSH 按键)下降沿中断——停机模式的唤醒源
+ * 说    明: 仅在停机前被使能(lowpower.c 的 prepare), 中断内只清
+ *           标志(唤醒即刻生效), 不做消抖/业务处理; 运行期该中断
+ *           处于禁用状态, 按键状态由 TMR7 1ms 同步采样维护
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月17日
+ *     修改内容: 新增函数(停机模式按键唤醒需求)
+ **********************************************************************/
+void EXINT3_IRQHandler(void)
+{
+  /* 清除唤醒标志(幂等, teardown 时会再次清除) */
+  exint_flag_clear(EXINT_LINE_3);
 }

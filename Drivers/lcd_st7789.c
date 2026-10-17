@@ -7,11 +7,13 @@
   *   1. GPIO 初始化（DC/RES/CS/BLK 控制脚 + SPI1 复用脚 SCL/SDA）
   *   2. SPI1 主机初始化（8bit、MSB 先行、模式 3：CPOL=1/CPHA=2Edge）
   *   3. 硬件复位时序与 ST7789V 上电初始化寄存器序列
-  *   4. 显示窗口设置、全屏清色与区域填充（流水式 SPI 发送）
+  *   4. 显示窗口设置、全屏清色与区域填充（像素流 DMA1 通道3 搬运, 命令轮询）
   *
   * 性能说明：
   *   全屏 240x240x16bit 共 115200 字节。时钟配置为 240MHz 主频时
   *   APB2=120MHz，SPI1 二分频后 60MHz，一次全屏填充约 15.5ms（约 64 帧/秒）。
+  *   LVGL 刷新像素流由 DMA1 通道3(SPI1_TX) 硬件搬运, CPU 不再逐字节
+  *   轮询 TDBE, 刷新时 CPU 占用显著下降(传输总时长仍由 SPI 时钟决定)。
   *   若接线较长导致显示异常（花屏/错位），可将 SPI_MCLK_DIV_2 改回
   *   SPI_MCLK_DIV_4（30MHz）以提升信号完整性。
   **************************************************************************
@@ -40,6 +42,48 @@ static void lcd_spi_write_byte(uint8_t data)
   /* 等待发送数据缓冲区空（上一字节已装入移位寄存器即可继续写入） */
   while(spi_i2s_flag_get(LCD_SPI, SPI_I2S_TDBE_FLAG) == RESET);
   spi_i2s_data_transmit(LCD_SPI, data);
+}
+
+/**
+ * @brief  用 DMA1 通道3（固定映射 SPI1_TX）将内存字节流搬运到 SPI1 数据寄存器
+ * @param  data：像素字节流首地址
+ * @param  len ：字节数（本工程单块绘制缓冲 240*40*2=19200 字节, 远小于 65535）
+ * @note   本工程 DMA 驱动源文件未加入工程, 故直接操作寄存器结构（见
+ *         at32f403a_407_dma.h 的 dma_channel_type）; 相比逐字节轮询 TDBE,
+ *         硬件 DMA 自动响应 TDBE 请求搬运, CPU 只需启动后等计数归零;
+ *         计数归零仅表示字节已写入 SPI 数据寄存器, 末字节可能仍在移位
+ *         寄存器中, 故末尾仍需等 BF 标志才能安全切换 DC
+ */
+static void lcd_spi_write_bytes_dma(const uint8_t *data, uint32_t len)
+{
+  dma_channel_type *dma_ch = DMA1_CHANNEL3;
+
+  /* ---- Step1: 先停通道再配置(内存 -> SPI1_TX, 8bit 宽度) ---- */
+  dma_ch->ctrl_bit.chen   = 0;                      /* 停通道, 避免配置期间误触发 */
+  dma_ch->paddr           = (uint32_t)&LCD_SPI->dt; /* 外设地址 = SPI1 数据寄存器 */
+  dma_ch->maddr           = (uint32_t)data;         /* 内存源地址 */
+  dma_ch->dtcnt           = (uint16_t)len;          /* 传输字节数 */
+  dma_ch->ctrl_bit.dtd    = 1;                      /* 方向: 内存 -> 外设 */
+  dma_ch->ctrl_bit.pincm  = 0;                      /* 外设地址固定 */
+  dma_ch->ctrl_bit.mincm  = 1;                      /* 内存地址自增 */
+  dma_ch->ctrl_bit.pwidth = 0;                      /* 外设数据宽度 8bit */
+  dma_ch->ctrl_bit.mwidth = 0;                      /* 内存数据宽度 8bit */
+  dma_ch->ctrl_bit.lm     = 0;                      /* 非循环模式 */
+  dma_ch->ctrl_bit.m2m    = 0;                      /* 非内存到内存 */
+  dma_ch->ctrl_bit.chpl   = 1;                      /* 中优先级 */
+
+  /* ---- Step2: 清完成标志, 使能 SPI1 发送 DMA 后再启动 DMA 通道 ---- */
+  DMA1->clr = DMA1_FDT3_FLAG;
+  spi_i2s_dma_transmitter_enable(LCD_SPI, TRUE);
+  dma_ch->ctrl_bit.chen = 1;
+
+  /* ---- Step3: 等待 DMA 计数归零(所有字节已写入 SPI 数据寄存器) ---- */
+  while(dma_ch->dtcnt != 0);
+
+  /* ---- Step4: 关 DMA, 等 SPI 移位寄存器发完末字节(后续切 DC 前必须) ---- */
+  dma_ch->ctrl_bit.chen = 0;
+  spi_i2s_dma_transmitter_enable(LCD_SPI, FALSE);
+  lcd_spi_wait_done();
 }
 
 /**
@@ -87,10 +131,11 @@ static void lcd_gpio_spi_init(void)
   gpio_init_type gpio_init_struct;
   spi_init_type  spi_init_struct;
 
-  /* 使能 GPIOA、GPIOB 与 SPI1 外设时钟 */
+  /* 使能 GPIOA、GPIOB、SPI1 与 DMA1 外设时钟(DMA1 用于 SPI1_TX 刷新搬运) */
   crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
   crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
   crm_periph_clock_enable(CRM_SPI1_PERIPH_CLOCK, TRUE);
+  crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
 
   /* 控制脚统一默认参数：推挽输出、无上下拉、强驱动能力 */
   gpio_default_para_init(&gpio_init_struct);
@@ -304,11 +349,15 @@ void LCD_Clear(uint16_t color)
  * 函数功能: 向指定区域写入原始 RGB565 字节流, 供 LVGL 的 flush 回调
  *           直接输出绘制缓冲区内容, 避免逐像素重新组包
  * 说    明: 依赖 lv_conf.h 中 LV_COLOR_16_SWAP=1, 保证缓冲区内像素
- *           本身已按"高字节在前"排列, 可按字节顺序直接发送
+ *           本身已按"高字节在前"排列, 可按字节顺序直接发送;
+ *           像素流由 DMA1 通道3(SPI1_TX) 硬件搬运, 命令/窗口仍用
+ *           轮询发送(DC 切换需 SPI 空闲, 数据量小无 DMA 必要)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月13日
  *     修改内容: 新增函数, 支撑 LVGL 显示适配层
+ *     修改日期: 2026年10月17日
+ *     修改内容: 像素流由逐字节轮询改为 DMA1 通道3 搬运(DMA 刷新需求)
  **********************************************************************/
 void LCD_WriteAreaBytes(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
                         const uint8_t *data, uint32_t len)
@@ -323,16 +372,8 @@ void LCD_WriteAreaBytes(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,
   LCD_SetWindow(x1, y1, x2, y2);
   LCD_WriteCmd(LCD_CMD_RAMWR);                  /* 0x2C: 开始写显存 */
 
-  /* ---- Step3: DC 拉高后连续发送字节流(流水线方式, 仅等待发送缓冲区空) ---- */
+  /* ---- Step3: DC 拉高后由 DMA1 搬运字节流(DMA 内已等末字节发完) ---- */
   lcd_spi_wait_done();
   gpio_bits_set(LCD_DC_PORT, LCD_DC_PIN);
-  {
-    uint32_t i;
-    for(i = 0; i < len; i++)
-    {
-      lcd_spi_write_byte(data[i]);
-    }
-  }
-  /* ---- Step4: 等最后字节发完, 再允许后续命令切换 DC ---- */
-  lcd_spi_wait_done();
+  lcd_spi_write_bytes_dma(data, len);
 }

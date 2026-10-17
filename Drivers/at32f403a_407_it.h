@@ -23,7 +23,8 @@ void SVC_Handler(void);
 void DebugMon_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
-void TMR7_GLOBAL_IRQHandler(void);
+void TMR7_GLOBAL_IRQHandler(void);   /* 编码器 1ms 同步采样(TMR7) */
+void EXINT3_IRQHandler(void);       /* 停机唤醒中断(PB3 PUSH 下降沿, 仅停机期使能) */
 
 #ifdef __cplusplus
 }

@@ -9,8 +9,10 @@
   *      同步采样方式下，采样间隔内的多次触点抖动只会留下"最终电平"，
   *      不会像 EXINT 双边沿中断那样把每个抖动边沿都计成一步——这是
   *      手拧 EC11 类机械编码器最可靠的解码方式（不丢步、不乱跳）；
-  *   2. PUSH 按键采用计数消抖：连续 8 次采样（约 8ms）电平一致才更新
-  *      稳定状态，沿事件由应用层轮询时检测；
+  *   2. PUSH 按键采用计数消抖：连续 5 次采样（约 5ms）电平一致才更新
+  *      稳定状态，沿事件由应用层轮询时检测；中断内同步维护连续按下
+  *      时长(ms)，达到 ENC_PUSH_LONG_PRESS_MS 产生一次长按事件
+  *      (整机"长按 3s 关机"判定源)；
   *   3. PB3/PB4 释放 JTAG 依赖 IOMUX 时钟（已在前置步骤使能），
   *      释放后 SWD 调试口保留不受影响。
   **************************************************************************
@@ -27,6 +29,9 @@
 
 /* PUSH 消抖所需连续一致采样次数(1ms/次, 约 5ms) */
 #define ENC_PUSH_STABLE_CNT   5U
+
+/* 长按计时封顶值(ms, 防止 uint16 溢出, 60s 足够) */
+#define ENC_PUSH_HOLD_MAX_MS  60000U
 
 /* ---- 正交解码查找表: index = (上次状态<<2)|本次状态, 值为增量 ----
    状态编码: bit1=CH_A 电平, bit0=CH_B 电平; 表值 +1/-1 为顺/逆时针 */
@@ -46,6 +51,9 @@ static volatile uint8_t  s_push_cnt;    // 候选电平连续出现次数
 static volatile uint8_t  s_pin_a;       // 调试用: 三路引脚最新电平
 static volatile uint8_t  s_pin_b;
 static volatile uint8_t  s_pin_push;
+static volatile uint16_t s_push_hold_ms;    // 连续按下时长累计(ms, 中断维护)
+static volatile uint8_t  s_long_press_fired; // 本次按下长按已触发标志(防重复)
+static volatile uint8_t  s_long_press_event; // 长按事件标志(任务读后清零)
 
 /*********************************************************************
  * 函 数 名: encoder_init
@@ -95,7 +103,7 @@ void encoder_init(void)
 //  DWT->CYCCNT = 0;                                    /* 重启 DWT 周期计数器 */
 //  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-  /* ---- Step3: 三路引脚配置为上拉输入(外部上拉到 3.3V, 空闲高电平) ---- */
+  /* ---- Step3: CH_A/CH_B 配置为上拉输入(外部上拉到 3.3V, 空闲高电平) ---- */
   gpio_default_para_init(&gpio_init_struct);
   gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
   gpio_init_struct.gpio_pull = GPIO_PULL_UP;
@@ -103,6 +111,15 @@ void encoder_init(void)
   gpio_init(ENC_CH_A_PORT, &gpio_init_struct);
   gpio_init_struct.gpio_pins = ENC_CH_B_PIN;
   gpio_init(ENC_CH_B_PORT, &gpio_init_struct);
+
+  /* ---- Step3.1: PUSH(PA0, 兼 WKUP 唤醒)按极性配置下拉/上拉输入 ----
+     高有效(按下=高): 下拉输入, 空闲低电平, 按下产生上升沿唤醒待机;
+     低有效(按下=低): 上拉输入, 上升沿出现在松手, 待机唤醒=松手触发 */
+#if (ENC_PUSH_ACTIVE_HIGH != 0U)
+  gpio_init_struct.gpio_pull = GPIO_PULL_DOWN;
+#else
+  gpio_init_struct.gpio_pull = GPIO_PULL_UP;
+#endif
   gpio_init_struct.gpio_pins = ENC_PUSH_PIN;
   gpio_init(ENC_PUSH_PORT, &gpio_init_struct);
 
@@ -111,11 +128,18 @@ void encoder_init(void)
   if(gpio_input_data_bit_read(ENC_CH_B_PORT, ENC_CH_B_PIN) != RESET){ curr |= 0x01; }
   s_ab_state = curr;
 
-  /* ---- Step5: 用当前 PUSH 真实电平初始化消抖状态(防止上电虚假按下) ---- */
+  /* ---- Step5: 用当前 PUSH 真实电平初始化消抖与长按状态(防止上电虚假按下) ---- */
   s_pin_push = (gpio_input_data_bit_read(ENC_PUSH_PORT, ENC_PUSH_PIN) != RESET) ? 1U : 0U;
   s_push_candidate = s_pin_push;
   s_push_cnt = ENC_PUSH_STABLE_CNT;              /* 已一致的初始化计数 */
+#if (ENC_PUSH_ACTIVE_HIGH != 0U)
+  s_push_stable = (s_pin_push != 0U) ? 1U : 0U;  /* 高电平=按下(高有效) */
+#else
   s_push_stable = (s_pin_push != 0U) ? 0U : 1U;  /* 高电平=松开(低有效) */
+#endif
+  s_push_hold_ms = 0U;                           /* 长按计时清零 */
+  s_long_press_fired = 0U;
+  s_long_press_event = 0U;
 
   /* ---- Step6: 配置 TMR7 为 1ms 周期更新中断(编码器采样节拍) ---- */
   tmr_base_init(TMR7, 1000U - 1U, 240U - 1U);   /* 240MHz/240=1MHz, 1000=1ms */
@@ -159,7 +183,7 @@ void encoder_tick_isr(void)
   s_delta += s_qdec_table[(s_ab_state << 2) | curr];
   s_ab_state = curr;
 
-  /* ---- Step4: PUSH 采样与计数消抖(连续 8 次一致才更新稳定状态) ---- */
+  /* ---- Step4: PUSH 采样与计数消抖(连续 5 次一致才更新稳定状态) ---- */
   s_pin_push = (gpio_input_data_bit_read(ENC_PUSH_PORT, ENC_PUSH_PIN) != RESET) ? 1U : 0U;
   if(s_pin_push != s_push_candidate)
   {
@@ -173,9 +197,32 @@ void encoder_tick_isr(void)
       s_push_cnt++;
       if(s_push_cnt >= ENC_PUSH_STABLE_CNT)     /* 连续一致达到阈值, 采纳 */
       {
-        s_push_stable = (s_pin_push != 0U) ? 0U : 1U; /* 高=松开, 低=按下 */
+#if (ENC_PUSH_ACTIVE_HIGH != 0U)
+        s_push_stable = (s_pin_push != 0U) ? 1U : 0U; /* 高=按下(高有效) */
+#else
+        s_push_stable = (s_pin_push != 0U) ? 0U : 1U; /* 高=松开(低有效) */
+#endif
       }
     }
+  }
+
+  /* ---- Step5: 长按计时(按下每 1ms 递增, 达阈值产生一次长按事件) ---- */
+  if(s_push_stable != 0U)
+  {
+    if(s_push_hold_ms < ENC_PUSH_HOLD_MAX_MS)
+    {
+      s_push_hold_ms++;
+    }
+    if((s_long_press_fired == 0U) && (s_push_hold_ms >= ENC_PUSH_LONG_PRESS_MS))
+    {
+      s_long_press_fired = 1U;                  /* 按住期间只触发一次 */
+      s_long_press_event = 1U;
+    }
+  }
+  else
+  {
+    s_push_hold_ms = 0U;                        /* 松开即清零(供 UI 取消提示) */
+    s_long_press_fired = 0U;
   }
 }
 
@@ -220,7 +267,7 @@ int32_t encoder_get_delta(void)
  **********************************************************************/
 uint8_t encoder_push_pressed(void)
 {
-  return s_push_stable;
+  return s_push_stable;   /* 极性无关: 统一返回 1=按下(见 ENC_PUSH_ACTIVE_HIGH) */
 }
 
 /*********************************************************************
@@ -252,6 +299,53 @@ uint8_t encoder_push_rising_edge(void)
 
   s_last_pressed = pressed_now;
   return 0;
+}
+
+/*********************************************************************
+ * 函 数 名: encoder_push_hold_ms
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: uint32_t 当前连续按下的毫秒数(0=未按下或刚松开)
+ * 函数功能: 读取当前长按时长(供 UI 做关机倒计时进度提示)
+ * 说    明: 由 TMR7 1ms 中断维护; uint16 对齐读取在 CM4 上原子,
+ *           无需关中断
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月17日
+ *     修改内容: 新增函数(长按 3s 关机需求)
+ **********************************************************************/
+uint32_t encoder_push_hold_ms(void)
+{
+  return (uint32_t)s_push_hold_ms;
+}
+
+/*********************************************************************
+ * 函 数 名: encoder_push_long_press
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: uint8_t  1=连续按下达到 ENC_PUSH_LONG_PRESS_MS(读后自动清零)
+ * 函数功能: 获取长按事件(供应用层触发关机流程)
+ * 说    明: 按住期间只触发一次, 松开复位; 读-清零用 PRIMASK 短临界区
+ *           保护, 防止与中断写入交错
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月17日
+ *     修改内容: 新增函数(长按 3s 关机需求)
+ **********************************************************************/
+uint8_t encoder_push_long_press(void)
+{
+  uint8_t event;
+  uint32_t primask = __get_PRIMASK();    // 保存当前中断状态
+
+  /* ---- Step1: 关中断, 原子读取并清零事件标志 ---- */
+  __disable_irq();
+  event = s_long_press_event;
+  s_long_press_event = 0U;
+
+  /* ---- Step2: 恢复中断状态 ---- */
+  __set_PRIMASK(primask);
+
+  return event;
 }
 
 /*********************************************************************

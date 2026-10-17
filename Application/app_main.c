@@ -15,6 +15,11 @@
   *      lv_timer_handler(), 并从队列取出编码器/传感器事件驱动 UI 联动；
   *   3. sgp30_task（优先级 1） : 1s 周期读取 SGP30 的 eCO2/TVOC 并投递
   *      队列(驱动内部 12ms 忙等可被高优先级任务随时抢占, 不影响 UI)。
+  *
+  * 整机电源逻辑（DEEPSLEEP 停机）：
+  *   上电/复位 -> 默认停机(关机态) -> PUSH 按下(PB3=EXINT3 下降沿)
+  *   -> 唤醒(恢复 240MHz) -> 开机运行 -> PUSH 长按 3s -> 熄屏停机
+  *   -> 再按 PUSH 唤醒, 原界面原地恢复显示(循环)。
   **************************************************************************
   */
 
@@ -24,6 +29,7 @@
 #include "lcd_st7789.h"
 #include "backlight.h"
 #include "encoder.h"
+#include "lowpower.h"
 #include "sgp30.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
@@ -93,30 +99,70 @@ static void system_clock_config(void)
  * 入口参数: arg     任务参数(未使用)
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 编码器任务: 20ms 轮询驱动层, 将旋转增量与按键事件投递队列
+ * 函数功能: 编码器任务: 20ms 轮询驱动层, 将旋转/按键/长按进度事件投递
+ *           队列; 长按达 3s 时执行关机序列(熄屏->松手->停机)
  * 说    明: 本任务只与驱动层/队列交互, 不触碰任何 LVGL 接口,
- *           避免跨线程访问 UI 造成竞态
+ *           避免跨线程访问 UI 造成竞态;
+ *           关机序列说明: 1) 先投递"长按达阈值"消息让 UI 画出
+ *           "Power off"提示; 2) 400ms 后熄背光; 3) 等待松手——
+ *           EXINT3 以按下下降沿唤醒, 松手后再停机才可获得有效边沿;
+ *           4) 停机(DEEPSLEEP)期间 RAM/屏幕 GRAM 保持, PUSH 按下
+ *           唤醒后函数返回: 恢复背光并发送 hold=0 消息隐藏关机
+ *           提示, 任务循环继续(原界面原地恢复, 非复位重启)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
- *     修改内容: 新增函数(FreeRTOS 引入)
+ *     修改内容: 新增函数(FreeRTOS 引入);
+ *     修改日期: 2026年10月17日
+ *     修改内容: 新增长按 3s 关机序列与 hold_ms 事件投递(低功耗需求);
+ *               待机方案由 STANDBY 改为 DEEPSLEEP(不改 PUSH 接线)
  **********************************************************************/
 __NO_RETURN static void encoder_task(void *arg)
 {
   app_encoder_msg_t msg;                          // 待投递的事件
+  static uint32_t s_prev_hold = 0;                // 上一周期按下时长(检测归零沿)
   (void)arg;
 
   while(1)
   {
-    /* ---- Step1: 读取驱动层累计增量与按键沿事件 ---- */
+    /* ---- Step1: 读取驱动层累计增量/按键沿事件/长按时长 ---- */
     msg.delta = encoder_get_delta();
     msg.push_pressed = encoder_push_rising_edge();
+    msg.hold_ms = (int32_t)encoder_push_hold_ms();
 
-    /* ---- Step2: 有事件才投递, 空闲时休眠 20ms ---- */
-    if((msg.delta != 0) || (msg.push_pressed != 0))
+    /* ---- Step2: 长按达 3s -> 执行关机序列 ---- */
+    if(encoder_push_long_press() != 0)
+    {
+      msg.hold_ms = (int32_t)ENC_PUSH_LONG_PRESS_MS;   /* 强制携带阈值语义 */
+      xQueueSend(g_encoder_queue, &msg, 0);           /* UI 画出 Power off 提示 */
+      vTaskDelay(pdMS_TO_TICKS(400));                  /* 留出 LVGL 绘制时间 */
+      backlight_off();                                 /* 熄背光(PWM 最低 20% 仍可见) */
+      while(encoder_push_pressed() != 0U)              /* 等待松手(见函数头注释 3) */
+      {
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+      vTaskDelay(pdMS_TO_TICKS(200));                  /* 安静期: 躲开松手弹片回弹初期 */
+      lowpower_power_down();                          /* 停机, PUSH 按下唤醒 */
+
+      /* Step2.1 唤醒恢复: 背光回到关机前亮度(s_percent 在 RAM 中保持),
+              并立即取消 UI 关机提示(不等 TMR7 重新计时清零) */
+      backlight_init();                               /* 恢复 PB1 复用 + PWM 输出 */
+      msg.delta = 0;
+      msg.push_pressed = 0;
+      msg.hold_ms = 0;
+      xQueueSend(g_encoder_queue, &msg, 0);           /* UI 隐藏 "Power off..." */
+      s_prev_hold = 0;                                /* 归零沿已手动处理 */
+    }
+
+    /* ---- Step3: 有事件才投递(hold 从非 0 归 0 也发, 供 UI 取消提示) ---- */
+    if((msg.delta != 0) || (msg.push_pressed != 0)
+       || (msg.hold_ms != 0) || (s_prev_hold != 0))
     {
       xQueueSend(g_encoder_queue, &msg, 0);      // 队列满则丢弃(旧事件会被新值覆盖, 无碍)
     }
+    s_prev_hold = (uint32_t)msg.hold_ms;
+
+    /* ---- Step4: 空闲时休眠 20ms ---- */
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
@@ -198,7 +244,7 @@ __NO_RETURN static void lvgl_task(void *arg)
     /* ---- Step1: 非阻塞收取编码器事件(可能一次积压多条, 全部处理) ---- */
     while(xQueueReceive(g_encoder_queue, &msg, 0) == pdTRUE)
     {
-      app_ui_encoder_event(msg.delta, msg.push_pressed);
+      app_ui_encoder_event(msg.delta, msg.push_pressed, msg.hold_ms);
     }
 
     /* ---- Step2: 非阻塞收取 SGP30 传感器数据, 转发 UI 显示 ---- */
@@ -232,6 +278,13 @@ int main(void)
   /* ---- Step1: 系统时钟配置到 240MHz, 使能 DWT 延时基准 ---- */
   system_clock_config();
   delay_init();
+
+  /* ---- Step1.1: 低功耗开机管理(整机电源逻辑) ----
+     默认关机态: 停机(DEEPSLEEP)等待 PUSH 按下(PB3=EXINT3 下降沿)
+     唤醒, 函数返回即"开机", main 继续正常初始化流程;
+     按复位/上电会再次进入停机(默认关机态) */
+  lowpower_init();
+  lowpower_boot_wait();
 
   /* ---- Step2: 驱动层初始化: 屏幕 / 背光 PWM / 编码器 ---- */
   LCD_Init();

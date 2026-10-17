@@ -1,14 +1,15 @@
 /**
   **************************************************************************
   * @file     lv_port_disp.c
-  * @brief    LVGL v8 显示适配层实现（ST7789V 240x240, 硬件 SPI1）
+  * @brief    LVGL v8 显示适配层实现（ST7789V 240x240, 硬件 SPI1 + DMA1）
   *
   * 实现说明：
-  *   使用单块 1/4 屏尺寸的绘制缓冲区（240x60x2 = 28.8KB）。LVGL 将控件
+  *   使用单块 1/6 屏尺寸的绘制缓冲区（240x40x2 = 18.75KB）。LVGL 将控件
   *   绘制到该缓冲区后调用 flush 回调，适配层通过 LCD_WriteAreaBytes 将
   *   缓冲区内容按 RGB565 字节流（高字节在前，LV_COLOR_16_SWAP=1 保证）
-  *   直接写入 ST7789V 显存窗口。flush 采用同步阻塞方式（SPI 无 DMA），
-  *   写完立即调用 lv_disp_flush_ready 通知 LVGL 缓冲区可复用。
+  *   直接写入 ST7789V 显存窗口。像素流由 DMA1 通道3(SPI1_TX) 硬件搬运,
+  *   flush 仍为同步阻塞(等 DMA 完成), 写完立即调用 lv_disp_flush_ready
+  *   通知 LVGL 缓冲区可复用。
   **************************************************************************
   */
 
@@ -20,7 +21,7 @@
 
 /* LVGL 绘制缓冲区与显示驱动描述符（LVGL 要求全局有效, 不能放栈上） */
 static lv_disp_draw_buf_t s_draw_buf;                        // LVGL 绘制缓冲区描述符
-static lv_color_t        s_buf1[240 * DISP_BUF_LINES];       // 绘制缓冲区1(28.8KB)
+static lv_color_t        s_buf1[240 * DISP_BUF_LINES];       // 绘制缓冲区1(18.75KB)
 static lv_disp_drv_t     s_disp_drv;                         // LVGL 显示驱动描述符
 
 /*********************************************************************
@@ -65,7 +66,7 @@ static void disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *c
  **********************************************************************/
 void lv_port_disp_init(void)
 {
-  /* ---- Step1: 注册绘制缓冲区(240x60, 单缓冲, 屏幕的 1/4) ---- */
+  /* ---- Step1: 注册绘制缓冲区(240x40, 单缓冲, 屏幕的 1/6) ---- */
   lv_disp_draw_buf_init(&s_draw_buf, s_buf1, NULL, 240 * DISP_BUF_LINES);
 
   /* ---- Step2: 配置显示驱动: 240x240 分辨率, 绑定 flush 回调 ---- */

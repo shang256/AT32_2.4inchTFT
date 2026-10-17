@@ -25,6 +25,7 @@ extern "C" {
 
 void backlight_init(void);                       /* 初始化 TMR3_CH4 PWM(初始 100% 全亮) */
 void backlight_set_percent(uint8_t percent);     /* 设置亮度 20~100, 超范围自动限幅 */
+void backlight_off(void);                        /* 停止 PWM 并拉低 PB1 强制熄屏(进待机前调用) */
 uint8_t backlight_get_percent(void);            /* 读取当前亮度百分比 */
 
 #ifdef __cplusplus

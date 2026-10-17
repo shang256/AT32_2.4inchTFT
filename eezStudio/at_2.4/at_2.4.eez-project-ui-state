@@ -1,8 +1,14 @@
 {
   "navigation": {
     "selectedUserPageObject": "[at_2.4.eez-project]:/userPages/0",
+    "selectedGlobalVariableObject": "[at_2.4.eez-project]:/variables/globalVariables/0",
+    "selectedStyleObject": "[at_2.4.eez-project]:/lvglStyles/styles/0",
+    "selectedThemeObject": "[at_2.4.eez-project]:/themes/1",
+    "selectedFontObject": "[at_2.4.eez-project]:/fonts/0",
     "selectedBitmapObject": "[at_2.4.eez-project]:/bitmaps/0",
-    "subnavigationSelectedItems": {}
+    "subnavigationSelectedItems": {
+      "variables-tab/sub-navigation/selected-item": "Global"
+    }
   },
   "layoutModel": {
     "rootEditor": {
@@ -22,7 +28,7 @@
           },
           {
             "type": "border",
-            "selected": 2,
+            "selected": 3,
             "size": 240,
             "location": "right",
             "children": [
@@ -117,12 +123,13 @@
             {
               "type": "row",
               "id": "#10c88006-691a-4408-a40d-a8f429274f13",
-              "weight": 15,
+              "weight": 26.579949238578678,
               "children": [
                 {
                   "type": "tabset",
                   "id": "#fa353785-e513-4d18-be21-f4b14fd8576e",
                   "weight": 1,
+                  "selected": 2,
                   "enableClose": false,
                   "children": [
                     {
@@ -188,7 +195,7 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 45.1867816091954,
+              "weight": 33.606832370616715,
               "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
@@ -216,8 +223,7 @@
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",
@@ -227,7 +233,7 @@
                 {
                   "type": "tabset",
                   "id": "#36f9aca2-cae5-474e-ac10-0fe00907919c",
-                  "weight": 2,
+                  "weight": 1.759090909090909,
                   "children": [
                     {
                       "type": "tab",
@@ -237,12 +243,13 @@
                       "enableClose": false,
                       "icon": "svg:properties"
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
                   "id": "#68ac3241-4909-476e-a3a5-fe6bb1215f7b",
-                  "weight": 1,
+                  "weight": 1.240909090909091,
                   "children": [
                     {
                       "type": "tab",
@@ -628,8 +635,7 @@
                       "component": "bitmaps",
                       "enableClose": false
                     }
-                  ],
-                  "active": true
+                  ]
                 },
                 {
                   "type": "tabset",
@@ -647,7 +653,8 @@
                       "component": "preview",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 }
               ]
             }
@@ -856,7 +863,8 @@
                       "component": "styles",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -914,7 +922,8 @@
                       "component": "themes",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1069,15 +1078,16 @@
       "selectionFront": {},
       "selectionBack": {
         "0": {
-          "3": {
+          "1": {},
+          "2": {
             "$selected": true
           }
         }
       },
       "transform": {
         "translate": {
-          "x": -279.20238095238085,
-          "y": -210.36429080054873
+          "x": -240,
+          "y": -240
         },
         "scale": 2
       },
@@ -1086,6 +1096,11 @@
         "position": 0,
         "secondToPx": 200,
         "scrollLeft": 0
+      }
+    },
+    "[at_2.4.eez-project]:/lvglStyles/styles[tree-state]": {
+      "0": {
+        "$selected": true
       }
     }
   },
@@ -1116,5 +1131,5 @@
   "globalFlowZoom": true,
   "flowZoom": 2,
   "implementationLanguage": "C",
-  "openDialogDefaultPath": "H:\\HMI\\DigiTech\\BC301\\UI\\P_UI_TWDHF_BC302_25071000\\menu_clear_succeeded.png"
+  "openDialogDefaultPath": "E:\\桌面\\SF-Pro-Display\\SF-Pro-Display\\SF-Pro-Display-Bold.otf"
 }

@@ -119,3 +119,37 @@ uint8_t backlight_get_percent(void)
 {
   return s_percent;
 }
+
+/*********************************************************************
+ * 函 数 名: backlight_off
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 停止 TMR3 PWM 输出并将 PB1 配置为推挽输出低, 强制熄灭背光
+ * 说    明: 供"长按关机"序列在进入 STANDBY 前调用(PWM 最低 20% 仍可见,
+ *           必须断开复用直接拉低才能全灭);
+ *           注意: STANDBY 后所有 GPIO 变高阻, 待机期间 BLK 电平由
+ *           屏幕模组的上下拉决定——若模组 BLK 带上拉电阻, 待机时
+ *           背光会重新点亮, 需硬件去除上拉或增加下拉
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年10月17日
+ *     修改内容: 新增函数(整机低功耗关机序列)
+ **********************************************************************/
+void backlight_off(void)
+{
+  gpio_init_type gpio_init_struct;               // GPIO 配置结构
+
+  /* ---- Step1: 停止 TMR3 计数(PWM 输出随复用断开而停止) ---- */
+  tmr_counter_enable(TMR3, FALSE);
+
+  /* ---- Step2: PB1 切换为普通推挽输出并拉低(背光全灭) ---- */
+  gpio_default_para_init(&gpio_init_struct);
+  gpio_init_struct.gpio_mode           = GPIO_MODE_OUTPUT;
+  gpio_init_struct.gpio_out_type       = GPIO_OUTPUT_PUSH_PULL;
+  gpio_init_struct.gpio_pull           = GPIO_PULL_NONE;
+  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+  gpio_init_struct.gpio_pins           = GPIO_PINS_1;
+  gpio_init(GPIOB, &gpio_init_struct);
+  gpio_bits_reset(GPIOB, GPIO_PINS_1);
+}

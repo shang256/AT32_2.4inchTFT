@@ -8,6 +8,7 @@
 ".\objects\delay.o"
 ".\objects\sw_i2c.o"
 ".\objects\sgp30.o"
+".\objects\lowpower.o"
 ".\objects\at32f403a_407_it.o"
 ".\objects\tasks.o"
 ".\objects\queue.o"
@@ -112,7 +113,7 @@
 ".\objects\styles.o"
 ".\objects\ui.o"
 ".\objects\ui_image_success.o"
---strict --scatter ".\Objects\AT32F403A_LCD_Demo.sct"
+--library_type=microlib --strict --scatter ".\Objects\AT32F403A_LCD_Demo.sct"
 --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
 --info sizes --info totals --info unused --info veneers
 --list ".\Listings\AT32F403A_LCD_Demo.map" -o .\Objects\AT32F403A_LCD_Demo.axf
