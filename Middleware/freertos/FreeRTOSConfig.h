@@ -92,6 +92,9 @@
 
 /* ==== 功能裁剪 ==== */
 
+// 互斥量(保护软件 I2C 总线: SGP30/AHT20/BMP280 多传感器任务共享)
+#define configUSE_MUTEXES                       1
+
 // 不使用 FreeRTOS 软件定时器(LVGL 自带定时器机制)
 #define configUSE_TIMERS                        0
 

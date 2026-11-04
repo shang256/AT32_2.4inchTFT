@@ -1,6 +1,6 @@
 # AT32F403ACGU7 + ST7789V 240x240 LVGL + FreeRTOS 演示工程
 
-基于 **Keil MDK5 (ARM Compiler 6)** 的 **FreeRTOS + LVGL v8.3** 交互演示工程（AT32F403ACGU7 @ 240MHz，硬件 SPI1 60MHz 驱动 ST7789V）。**旋转编码器**联动 LVGL 界面与 **PWM 背光调光**，屏幕右下角实时显示 FPS。
+基于 **Keil MDK5 (ARM Compiler 6)** 的 **FreeRTOS + LVGL v8.3** 交互演示工程（AT32F403ACGU7 @ 240MHz，硬件 SPI1 60MHz 驱动 ST7789V）。**旋转编码器**联动 LVGL 界面与 **PWM 背光调光**；同一条软件 I2C 总线挂载 **SGP30（eCO2/TVOC）+ AHT20（温湿度）+ BMP280（气压）** 三个传感器实时显示，屏幕右下角实时显示 FPS。
 
 工程已编译验证通过（0 Error / 0 Warning），HEX 位于 `Project\Objects\AT32F403A_LCD_Demo.hex`。
 
@@ -26,6 +26,8 @@ AT32F403ACGU7/
 │   ├── lowpower.c/h                  # 低功耗管理（STANDBY 待机 + WKUP 唤醒，寄存器级实现）
 │   ├── sw_i2c.c/h                    # 软件模拟 I2C 主机（SCL=PA2 / SDA=PA3, 开漏 ~100kHz）
 │   ├── sgp30.c/h                     # SGP30 空气质量传感器驱动（eCO2/TVOC, 移植自 ESP-IDF）
+│   ├── aht20.c/h                     # AHT20 温湿度传感器驱动（0x38, 定点 ×10 输出）
+│   ├── bmp280.c/h                    # BMP280 气压传感器驱动（0x76, Bosch 补偿公式）
 │   ├── delay.c/h                     # DWT 忙等延时（初始化阶段专用）
 │   └── at32f403a_407_it.c/h          # 中断向量分发（SysTick/EXINT）
 ├── Libraries/                         # 第三方库
@@ -45,9 +47,10 @@ AT32F403ACGU7/
 | `encoder_task` | 3 | 1KB | 20ms 轮询编码器驱动，将旋转/按键/长按进度事件经**FreeRTOS 队列**投递（不触碰 LVGL）；**长按 3s 执行关机序列**（提示 → 熄屏 → 等松手 → 进 STANDBY） |
 | `lvgl_task` | 2 | 4KB | **LVGL 刷图专用线程**：5ms 周期执行 `lv_timer_handler()`，从队列取编码器/传感器事件驱动 UI |
 | `sgp30_task` | 1 | 1KB | 1s 周期读取 SGP30 eCO2/TVOC，经队列投递 LVGL 线程显示（12ms 忙等可被高优先级任务抢占） |
+| `env_task` | 1 | 2KB | 1s 周期读取 AHT20 温湿度 + BMP280 气压，经队列投递 LVGL 线程显示；模块离线时对应项显示 "--"（驱动内部约 90ms 忙等可被抢占） |
 | idle（空闲） | 0 | 512B | FreeRTOS 内置空闲任务 |
 
-线程安全设计：LVGL 非线程安全，所有 UI 访问收敛在 `lvgl_task`；编码器事件经队列跨线程传递（`app_encoder_msg_t`），传感器数据经队列跨线程传递（`app_sensor_msg_t`），生产者任务只与驱动层和队列交互。
+线程安全设计：LVGL 非线程安全，所有 UI 访问收敛在 `lvgl_task`；编码器事件经队列跨线程传递（`app_encoder_msg_t`），传感器数据经队列跨线程传递（`app_sensor_msg_t` / `app_env_msg_t`），生产者任务只与驱动层和队列交互。**软件 I2C 总线非线程安全**：SGP30/AHT20/BMP280 三个传感器共享同一条总线，`sgp30_task` 与 `env_task` 通过互斥锁 `g_i2c_mutex`（`configUSE_MUTEXES=1`）串行访问。
 
 ## 硬件连接
 
@@ -59,8 +62,10 @@ AT32F403ACGU7/
 | ENC PUSH | PB3 | 编码器按键（低有效：按键一脚接 GND，内部上拉），**兼作停机唤醒 EXINT3**（按下产生下降沿唤醒） |
 | ENC CH_A | PB4 | 编码器 A 相（**JTAG 释放后作 GPIO**，外部上拉 3.3V） |
 | ENC CH_B | PB5 | 编码器 B 相（外部上拉 3.3V） |
-| SGP30 SCL | PA2 | 软件 I2C 时钟（开漏输出，依赖模块板载上拉） |
-| SGP30 SDA | PA3 | 软件 I2C 数据（开漏输出，依赖模块板载上拉） |
+| I2C SCL | PA2 | 软件 I2C 时钟（开漏输出，依赖模块板载上拉）——SGP30/AHT20/BMP280 三模块共用 |
+| I2C SDA | PA3 | 软件 I2C 数据（开漏输出，依赖模块板载上拉）——SGP30/AHT20/BMP280 三模块共用 |
+
+> SGP30/AHT20/BMP280 并联到同一条软件 I2C 总线（SCL→PA2 / SDA→PA3）。AHT20 地址固定 `0x38`；BMP280 地址默认 `0x76`（SDO 接 GND），若 SDO 接 VCC 需将 `bmp280.h` 中 `BMP280_I2C_ADDR` 改为 `0x77`。
 
 > 编码器解码方式：**TMR7 1ms 定时中断同步采样 + 状态表四倍频解码**（相比 EXINT 双边沿中断，同步采样天然滤除 EC11 机械触点抖动，不丢步不乱跳）。界面右上角有 **"A:x B:x P:x"** 实时电平自检行：空闲时应显示 `A:1 B:1 P:1`（上拉 3.3V），旋转/按下时对应数字实时翻转；若恒定不变，说明信号未进入 MCU（检查接线与编码器供电）。
 
@@ -80,11 +85,12 @@ AT32F403ACGU7/
 
 ## 演示效果
 
-上电后界面显示：顶部标题、中央 270° 环形仪表盘（弧心嵌亮度百分比大字与 eCO2/TVOC 小字）、翻转按钮：
+上电后界面显示：顶部标题、中央 270° 环形仪表盘（弧心嵌亮度百分比大字与 eCO2/TVOC 小字）、弧下方温湿度/气压两行、翻转按钮：
 
 - **旋转编码器**：调节背光亮度（每格 ±2%）——仪表盘弧值以 **400ms 缓动动画平滑扫动**，指示弧颜色随亮度三段渐变（20% 紫 → 60% 亮青 → 100% 荧光绿），弧心大号百分比数字同步变色并**放大-回弹弹跳**，与 TMR3 PWM 实际亮度实时同步
 - **点按编码器**：按钮状态翻转——背景色 **300ms 渐变过渡**（OFF 灰 ? ON 蓝）+ 按钮**整体弹跳缩放**，文字随之变化（"BTN: ON"/"BTN: OFF"）
 - **SGP30 空气质量实时显示**：弧心下方两行小字显示 **eCO2（绿色）** 与 **TVOC（青色）**，1s 周期刷新；初始化后约 15s 预热期固定显示 400/0（数据手册定义的正常现象）
+- **AHT20 温湿度 / BMP280 气压实时显示**：弧下方两行小字显示 **温度/湿度（橙色）** 与 **气压（浅蓝）**，1s 周期刷新；任一模块不在线时对应标签显示 `--`（`T:--C H:--%` / `P:-- hPa`）
 - 屏幕右下角显示 **FPS + CPU 占用率**（FreeRTOS 空闲率换算）
 
 ## 关键驱动接口
@@ -103,6 +109,14 @@ uint8_t encoder_push_rising_edge(void);       /* "松开→按下"沿事件（读后清零） 
 /* sgp30.h —— SGP30 空气质量传感器（软件 I2C: SCL=PA2 / SDA=PA3） */
 sgp30_status_t sgp30_init(void);              /* 初始化 I2C + Init_air_quality 命令(0x2003) */
 sgp30_status_t sgp30_read(sgp30_data_t *data);/* 测量(0x2008)+CRC 校验, 读 eCO2(ppm)/TVOC(ppb) */
+
+/* aht20.h —— AHT20 温湿度传感器（软件 I2C: SCL=PA2 / SDA=PA3, 地址 0x38） */
+aht20_status_t aht20_init(void);              /* 初始化(0xBE0800)+状态校验 */
+aht20_status_t aht20_read(aht20_data_t *data);/* 触发测量(0xAC3300), 读温度(0.1°C)/湿度(0.1%RH) 定点 */
+
+/* bmp280.h —— BMP280 气压传感器（软件 I2C: SCL=PA2 / SDA=PA3, 地址 0x76） */
+bmp280_status_t bmp280_init(void);            /* 校验芯片 ID + 读校准参数 + 配置 normal 模式 */
+bmp280_status_t bmp280_read(bmp280_data_t *data);/* 读原始值 + Bosch 补偿, 输出气压(0.1hPa) 定点 */
 
 /* lcd_st7789.h —— 屏幕 */
 void LCD_Init(void);                          /* SPI1 + 复位 + 寄存器初始化 */
@@ -138,3 +152,5 @@ void LCD_WriteAreaBytes(...);                 /* 窗口写 RGB565 字节流（LVGL flus
 | 停机后按 PUSH 无法唤醒 | ① 确认按键一脚接 GND 且按下可靠接地（低有效，唤醒靠 EXINT3 下降沿）；② 确认关机时已松手（按住状态下停机无有效边沿）；③ 检查 PB3 电平自检行是否随按下翻转 |
 | **松手后几秒屏幕自己亮起（假唤醒）** | 按键弹片"弹性后效"：长按松开后触点接触电阻在数秒内缓慢爬升，PUSH 线仅靠内部 ~40kΩ 弱上拉，PB3 电平缓慢滑落穿过 EXINT3 阈值产生"伪下降沿"。**软件已修复**（`lowpower.c`）：唤醒后须持续按住 50ms 才确认有效，毛刺自动重新停机；进停机前另有 200ms 安静期。**硬件建议**：给 PUSH 线增加 10kΩ 外部上拉到 3.3V，从源头增强抗回弹能力 |
 | 关机唤醒后界面卡住/外设停摆 | 停机唤醒后时钟恢复由 `lowpower.c` 完成（重配 PLL 切 240MHz，**不做 `crm_reset()`**）；若在别处调用含 `crm_reset()` 的时钟配置会关闭全部外设时钟门控，导致 TMR7/SPI1 停摆 |
+| 温度/湿度显示 `T:--C H:--%` | ① 检查 AHT20 模块 SCL→PA2 / SDA→PA3 / VCC→3.3V / GND 共地；② 确认与 SGP30/BMP280 并联在同一条 I2C 总线且总线有上拉；③ `env_task` 每秒自动重试，接好后约 1s 内恢复显示 |
+| 气压显示 `P:-- hPa` | ① 检查 BMP280 模块接线（同上）；② 确认 BMP280 的 SDO 接 GND（默认地址 0x76），若 SDO 接 VCC 需改 `bmp280.h` 的 `BMP280_I2C_ADDR` 为 0x77；③ `env_task` 每秒自动重试，接好后约 1s 内恢复 |

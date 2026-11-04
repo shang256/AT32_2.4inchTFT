@@ -15,6 +15,11 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
+
+/* I2C 总线互斥锁(软件 I2C 非线程安全, SGP30/AHT20/BMP280 多任务共享
+   同一条总线, 各传感器任务访问前须 take、访问后 give) */
+extern SemaphoreHandle_t g_i2c_mutex;
 
 /* 编码器事件队列项: 编码器任务 -> LVGL 任务 单向传递
    (统一使用 int32 字段, 避免混合宽度带来的结构体填充) */
@@ -39,6 +44,21 @@ typedef struct
 
 /* SGP30 传感器数据队列(应用层共享, 由 app_main 创建) */
 extern QueueHandle_t g_sensor_queue;
+
+/* 环境传感器数据队列项: 环境传感器任务 -> LVGL 任务 单向传递
+   (AHT20 温湿度 + BMP280 气压, 各自带在线标志, 可独立显示 "--";
+   统一使用 int32 字段, 避免混合宽度带来的结构体填充) */
+typedef struct
+{
+  int32_t  temp_x10;      /* AHT20 温度(0.1°C, 如 253=25.3°C) */
+  int32_t  hum_x10;       /* AHT20 湿度(0.1%RH, 如 482=48.2%) */
+  int32_t  press_x10;     /* BMP280 气压(0.1hPa, 如 10132=1013.2hPa) */
+  int32_t  aht_valid;     /* 1=AHT20 在线且数据有效 0=离线(显示 "--") */
+  int32_t  bmp_valid;     /* 1=BMP280 在线且数据有效 0=离线(显示 "--") */
+} app_env_msg_t;
+
+/* 环境传感器数据队列(应用层共享, 由 app_main 创建) */
+extern QueueHandle_t g_env_queue;
 
 #ifdef __cplusplus
 }

@@ -40,6 +40,8 @@ static lv_obj_t  *s_hint_label;      // 底部操作提示
 static lv_obj_t  *s_debug_label;     // 引脚电平自检行(硬件排查用)
 static lv_obj_t  *s_eco2_label;      // SGP30 eCO2 显示(弧心小字上)
 static lv_obj_t  *s_tvoc_label;      // SGP30 TVOC 显示(弧心小字下)
+static lv_obj_t  *s_temp_label;      // AHT20 温湿度显示(弧下方)
+static lv_obj_t  *s_press_label;     // BMP280 气压显示(弧下方)
 static lv_obj_t  *s_power_label;     // 长按关机进度提示(默认隐藏)
 
 /* 按钮翻转状态: 1=ON(蓝高亮) 0=OFF(灰暗显) */
@@ -608,21 +610,32 @@ void app_ui_init(void)
   lv_label_set_text(s_tvoc_label, "TVOC: --");
   lv_obj_align(s_tvoc_label, LV_ALIGN_CENTER, 0, 24);
 
+  /* ---- Step4.1: 弧下方环境传感器两行小字(AHT20 温湿度 / BMP280 气压) ---- */
+  s_temp_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(s_temp_label, lv_color_hex(0xFFB74D), 0);   /* 橙色: 温湿度 */
+  lv_label_set_text(s_temp_label, "T:--C  H:--%");
+  lv_obj_align(s_temp_label, LV_ALIGN_TOP_MID, 0, 156);
+
+  s_press_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(s_press_label, lv_color_hex(0x90CAF9), 0);  /* 浅蓝: 气压 */
+  lv_label_set_text(s_press_label, "P:-- hPa");
+  lv_obj_align(s_press_label, LV_ALIGN_TOP_MID, 0, 173);
+
   /* ---- Step5: 点按翻转按钮(初始 OFF 灰色, 发光脉冲动画) ---- */
   s_btn = lv_btn_create(lv_scr_act());
-  lv_obj_set_size(s_btn, 140, 44);
-  lv_obj_align(s_btn, LV_ALIGN_BOTTOM_MID, 0, -40);
+  lv_obj_set_size(s_btn, 140, 34);
+  lv_obj_align(s_btn, LV_ALIGN_BOTTOM_MID, 0, -16);
   lv_obj_clear_flag(s_btn, LV_OBJ_FLAG_CLICKABLE);   /* 输入来自编码器, 禁触屏点击 */
 
   s_btn_label = lv_label_create(s_btn);               /* 按钮文字(子对象) */
   lv_obj_center(s_btn_label);
 
-  /* ---- Step6: 底部操作提示 ---- */
+  /* ---- Step6: 底部操作提示(单行, 为环境传感器显示腾出空间) ---- */
   s_hint_label = lv_label_create(lv_scr_act());
-  lv_label_set_text(s_hint_label, "Rotate: backlight\nPush: toggle button");
+  lv_label_set_text(s_hint_label, "Rotate:light  Push:btn");
   lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0x9E9E9E), 0);
   lv_obj_set_style_text_align(s_hint_label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -6);
+  lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
   /* ---- Step6.1: 引脚电平自检行(右上角, 硬件排查用, 100ms 刷新) ---- */
   s_debug_label = lv_label_create(lv_scr_act());
@@ -765,5 +778,60 @@ void app_ui_sgp30_update(uint32_t eco2, uint32_t tvoc, uint32_t valid)
   {
     lv_label_set_text(s_eco2_label, "eCO2: --");
     lv_label_set_text(s_tvoc_label, "TVOC: --");
+  }
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_env_update
+ * 入口参数: temp_x10    AHT20 温度(0.1°C)
+ *           hum_x10     AHT20 湿度(0.1%RH)
+ *           press_x10   BMP280 气压(0.1hPa)
+ *           aht_valid   1=AHT20 在线且数据有效
+ *           bmp_valid   1=BMP280 在线且数据有效
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 刷新环境传感器(AHT20 温湿度 / BMP280 气压)显示标签
+ * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
+ *           两个传感器独立判定在线状态, 任一离线时对应标签显示 "--",
+ *           互不影响; 定点值(×10)拆分为整数/小数两部分显示, 负温度
+ *           单独处理符号
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月04日
+ *     修改内容: 新增函数(AHT20/BMP280 传感器需求)
+ **********************************************************************/
+void app_ui_env_update(int32_t temp_x10, int32_t hum_x10, int32_t press_x10,
+                       int32_t aht_valid, int32_t bmp_valid)
+{
+  /* ---- Step1: AHT20 温湿度(在线则显示带一位小数的定点值) ---- */
+  if(aht_valid != 0)
+  {
+    int t  = (int)(temp_x10 / 10);               /* 温度整数位 */
+    int td = (int)(temp_x10 % 10);               /* 温度小数位(0.1°C) */
+    int h  = (int)(hum_x10 / 10);                /* 湿度整数位 */
+    int hd = (int)(hum_x10 % 10);                /* 湿度小数位(0.1%RH) */
+    if(td < 0)
+    {
+      td = -td;                                  /* 负温度小数位取绝对值 */
+    }
+    lv_label_set_text_fmt(s_temp_label, "T:%d.%dC  H:%d.%d%%", t, td, h, hd);
+  }
+  /* ---- Step2: AHT20 离线 -> 占位符, 不显示陈旧数据 ---- */
+  else
+  {
+    lv_label_set_text(s_temp_label, "T:--C  H:--%");
+  }
+
+  /* ---- Step3: BMP280 气压(在线则显示带一位小数的定点值) ---- */
+  if(bmp_valid != 0)
+  {
+    int p  = (int)(press_x10 / 10);              /* 气压整数位(hPa) */
+    int pd = (int)(press_x10 % 10);              /* 气压小数位(0.1hPa) */
+    lv_label_set_text_fmt(s_press_label, "P:%d.%d hPa", p, pd);
+  }
+  /* ---- Step4: BMP280 离线 -> 占位符, 不显示陈旧数据 ---- */
+  else
+  {
+    lv_label_set_text(s_press_label, "P:-- hPa");
   }
 }
