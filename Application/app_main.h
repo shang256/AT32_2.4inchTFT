@@ -53,6 +53,7 @@ typedef struct
   int32_t  temp_x10;      /* AHT20 温度(0.1°C, 如 253=25.3°C) */
   int32_t  hum_x10;       /* AHT20 湿度(0.1%RH, 如 482=48.2%) */
   int32_t  press_x10;     /* BMP280 气压(0.1hPa, 如 10132=1013.2hPa) */
+  int32_t  altitude;      /* BMP280 换算海拔(米, 如 125=125m) */
   int32_t  aht_valid;     /* 1=AHT20 在线且数据有效 0=离线(显示 "--") */
   int32_t  bmp_valid;     /* 1=BMP280 在线且数据有效 0=离线(显示 "--") */
 } app_env_msg_t;

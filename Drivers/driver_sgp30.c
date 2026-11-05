@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     sgp30.c
+  * @file     driver_sgp30.c
   * @brief    SGP30 空气质量传感器驱动实现（移植自 ESP-IDF 版本, 逻辑不变）
   *
   * 参考 SGP30 数据手册, 采用 I2C 主机模式通信:
@@ -18,9 +18,9 @@
   */
 
 #include <stddef.h>
-#include "sgp30.h"
-#include "sw_i2c.h"
-#include "delay.h"
+#include "driver_sgp30.h"
+#include "driver_sw_i2c.h"
+#include "driver_delay.h"
 
 /** SGP30 7 位从机地址 */
 #define SGP30_I2C_ADDR                0x58U

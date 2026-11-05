@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     lcd_st7789.h
+  * @file     driver_lcd_st7789.h
   * @brief    ST7789V 240x240 LCD 驱动接口（硬件 SPI1 接口）
   *
   * 硬件连接（主控 AT32F403ACGU7）：
@@ -16,8 +16,8 @@
   **************************************************************************
   */
 
-#ifndef __LCD_ST7789_H
-#define __LCD_ST7789_H
+#ifndef __DRIVER_LCD_ST7789_H
+#define __DRIVER_LCD_ST7789_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -89,4 +89,4 @@ void LCD_WriteAreaBytes(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, cons
 }
 #endif
 
-#endif /* __LCD_ST7789_H */
+#endif /* __DRIVER_LCD_ST7789_H */

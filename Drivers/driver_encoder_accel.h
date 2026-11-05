@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     encoder_accel.h
+  * @file     driver_encoder_accel.h
   * @brief    旋转编码器变速(加速度)通用模块接口
   *
   * 功能说明：
@@ -15,8 +15,8 @@
   **************************************************************************
   */
 
-#ifndef __ENCODER_ACCEL_H
-#define __ENCODER_ACCEL_H
+#ifndef __DRIVER_ENCODER_ACCEL_H
+#define __DRIVER_ENCODER_ACCEL_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,4 +37,4 @@ int32_t encoder_accel_feed(encoder_accel_t *accel, int32_t delta);       /* 喂入
 }
 #endif
 
-#endif /* __ENCODER_ACCEL_H */
+#endif /* __DRIVER_ENCODER_ACCEL_H */

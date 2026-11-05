@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     sw_i2c.c
+  * @file     driver_sw_i2c.c
   * @brief    软件模拟 I2C 主机实现（SCL=PA2 / SDA=PA3, 约 100kHz）
   *
   * 时序说明（标准 I2C）：
@@ -12,8 +12,8 @@
   */
 
 #include <stddef.h>
-#include "sw_i2c.h"
-#include "delay.h"
+#include "driver_sw_i2c.h"
+#include "driver_delay.h"
 
 /* I2C 半周期(us): 5us 半周期约对应 100kHz SCL */
 #define SW_I2C_HALF_PERIOD_US   5U
@@ -289,6 +289,64 @@ uint8_t sw_i2c_read(uint8_t dev_addr, uint8_t *buf, uint16_t len)
   }
 
   /* ---- Step2: 逐字节读回, 末字节回复 NACK 通知从机结束 ---- */
+  for(i = 0U; i < len; i++)
+  {
+    buf[i] = sw_i2c_read_byte((uint8_t)((i + 1U == len) ? 1U : 0U));
+  }
+
+  sw_i2c_stop();
+  return 0U;
+}
+
+/*********************************************************************
+ * 函 数 名: sw_i2c_write_then_read
+ * 入口参数: dev_addr  从机 7 位地址(函数内部左移补读写位)
+ *           reg       待读寄存器起始地址
+ *           buf       读出数据缓冲区
+ *           len       读字节数(须大于 0)
+ * 出口参数: buf       存放读到的数据
+ * 返 回 值: uint8_t  0=成功  1=失败(地址/寄存器 NACK 或参数错误)
+ * 函数功能: I2C "写寄存器地址 + Repeated START + 连续读" 组合事务
+ * 说    明: 用于 BMP280 等要求 Repeated START 的器件——写寄存器地址
+ *           后不能 STOP, 否则多字节连续读时指针递增不可靠, 读回
+ *           错位数据; 本函数在写寄存器地址后直接产生 Repeated
+ *           START, 再按读地址连续读回 len 字节
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月05日
+ *     修改内容: 新增函数(BMP280 连续读需要 Repeated START)
+ **********************************************************************/
+uint8_t sw_i2c_write_then_read(uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint16_t len)
+{
+  uint16_t i;
+
+  if((buf == NULL) || (len == 0U))
+  {
+    return 1U;
+  }
+
+  /* ---- Step1: 起始 + 器件地址(写) + 寄存器地址(不 STOP) ---- */
+  sw_i2c_start();
+  if(sw_i2c_write_byte((uint8_t)(dev_addr << 1)) != 0U)
+  {
+    sw_i2c_stop();
+    return 1U;
+  }
+  if(sw_i2c_write_byte(reg) != 0U)
+  {
+    sw_i2c_stop();
+    return 1U;
+  }
+
+  /* ---- Step2: Repeated START + 器件地址(读) ---- */
+  sw_i2c_start();
+  if(sw_i2c_write_byte((uint8_t)(((uint32_t)dev_addr << 1) | 1U)) != 0U)
+  {
+    sw_i2c_stop();
+    return 1U;
+  }
+
+  /* ---- Step3: 连续读, 末字节回复 NACK ---- */
   for(i = 0U; i < len; i++)
   {
     buf[i] = sw_i2c_read_byte((uint8_t)((i + 1U == len) ? 1U : 0U));

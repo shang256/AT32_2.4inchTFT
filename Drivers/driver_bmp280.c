@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     bmp280.c
+  * @file     driver_bmp280.c
   * @brief    BMP280 气压传感器驱动实现（软件模拟 I2C, SCL=PA2 / SDA=PA3）
   *
   * 参考 Bosch BMP280 数据手册, 采用 I2C 主机模式通信：
@@ -18,12 +18,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "bmp280.h"
-#include "sw_i2c.h"
-#include "delay.h"
+#include "driver_bmp280.h"
+#include "driver_sw_i2c.h"
+#include "driver_delay.h"
 
-/** BMP280 7 位从机地址（SDO 接 GND 为 0x76, 接 VCC 为 0x77） */
-#define BMP280_I2C_ADDR          0x76U
+/** BMP280 7 位从机地址（本板 SDO 悬空=高电平, 地址为 0x77; SDO 接 GND 才为 0x76） */
+#define BMP280_I2C_ADDR          0x77U
 /** 芯片 ID 寄存器 */
 #define BMP280_REG_CHIP_ID       0xD0U
 /** 期望芯片 ID 值 */
@@ -37,10 +37,10 @@
 /** 数据起始寄存器（连续 6 字节） */
 #define BMP280_REG_DATA          0xF7U
 
-/** ctrl_meas: 温度 x1 过采样 + 气压 x1 过采样 + normal 模式 */
-#define BMP280_CTRL_MEAS_VAL     0x27U
-/** config: t_sb=0.5ms + filter 关 + spi3w 关 */
-#define BMP280_CONFIG_VAL        0x00U
+/** ctrl_meas: 温度 x16 过采样 + 气压 x8 过采样 + normal 模式(对齐商家例程) */
+#define BMP280_CTRL_MEAS_VAL     0xB3U
+/** config: t_sb=0.5ms + IIR 滤波系数 5(x16) + spi3w 关 */
+#define BMP280_CONFIG_VAL        0x14U
 
 /** 模块是否已初始化 */
 static uint8_t s_initialized = 0U;
@@ -79,11 +79,9 @@ static int32_t s_t_fine;
  **********************************************************************/
 static bmp280_status_t bmp280_read_regs(uint8_t reg, uint8_t *buf, uint16_t len)
 {
-  if(sw_i2c_write(BMP280_I2C_ADDR, &reg, 1U) != 0U)
-  {
-    return BMP280_ERR;
-  }
-  if(sw_i2c_read(BMP280_I2C_ADDR, buf, len) != 0U)
+  /* BMP280 读寄存器须用 Repeated START(写寄存器地址后不可 STOP),
+     否则多字节连续读时指针递增不可靠, 导致校准系数/原始值错位 */
+  if(sw_i2c_write_then_read(BMP280_I2C_ADDR, reg, buf, len) != 0U)
   {
     return BMP280_ERR;
   }
@@ -177,8 +175,8 @@ bmp280_status_t bmp280_init(void)
     return BMP280_ERR;
   }
 
-  /* ---- Step5: 等待 normal 模式首轮测量完成(x1 过采样约 9.5ms) ---- */
-  delay_ms(10U);
+  /* ---- Step5: 等待 normal 模式首轮测量完成(8X/16X 过采样约 40ms) ---- */
+  delay_ms(100U);
 
   s_initialized = 1U;
 
@@ -218,10 +216,11 @@ static int32_t bmp280_compensate_temp(int32_t adc_T)
  * 函 数 名: bmp280_compensate_press
  * 入口参数: adc_P  气压原始值（20bit）
  * 出口参数: 无
- * 返 回 值: uint32_t  气压（Pa）
+ * 返 回 值: uint32_t  气压（Pa 的 Q24.8 定点格式, 实际 Pa = 返回值/256）
  * 函数功能: 按 Bosch 数据手册公式做气压补偿
  * 说    明: 64 位定点运算, 须先调用温度补偿以更新 s_t_fine;
- *           分母为 0 时返回 0 由上层判错
+ *           分母为 0 时返回 0 由上层判错; 结果为 Q24.8 定点(24 整数
+ *           位 + 8 小数位), 上层需除以 256 换算为实际 Pa
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月04日
@@ -251,7 +250,7 @@ static uint32_t bmp280_compensate_press(int32_t adc_P)
   var2 = (((int64_t)s_dig_P8) * p) >> 19;
   p = ((p + var1 + var2) >> 8) + (((int64_t)s_dig_P7) << 4);
 
-  return (uint32_t)p;                            /* 单位 Pa */
+  return (uint32_t)p;                            /* Q24.8 定点 Pa, 实际 Pa = 返回值/256 */
 }
 
 /*********************************************************************
@@ -261,7 +260,8 @@ static uint32_t bmp280_compensate_press(int32_t adc_P)
  * 返 回 值: bmp280_status_t  BMP280_OK=成功
  * 函数功能: 读取原始值并经补偿换算为气压
  * 说    明: 从 0xF7 起读 6 字节(气压 20bit + 温度 20bit), 先做温度
- *           补偿得到 t_fine, 再做气压补偿; 气压 Pa/10 得到 0.1hPa 定点
+ *           补偿得到 t_fine, 再做气压补偿; 补偿结果是 Q24.8 定点 Pa,
+ *           除以 256 得 Pa, 再除以 10 得 0.1hPa 定点输出
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月04日
@@ -272,7 +272,7 @@ bmp280_status_t bmp280_read(bmp280_data_t *data)
   uint8_t  buf[6] = {0U};
   int32_t  adc_P;
   int32_t  adc_T;
-  uint32_t press_pa;
+  uint32_t press_q248;                          /* 补偿函数输出的 Q24.8 定点 Pa */
 
   if((s_initialized == 0U) || (data == NULL))
   {
@@ -295,14 +295,69 @@ bmp280_status_t bmp280_read(bmp280_data_t *data)
 
   /* ---- Step3: 温度补偿(更新 t_fine)后做气压补偿 ---- */
   (void)bmp280_compensate_temp(adc_T);
-  press_pa = bmp280_compensate_press(adc_P);
+  press_q248 = bmp280_compensate_press(adc_P);
 
-  /* ---- Step4: Pa -> 0.1hPa 定点(Pa/10), 0 视为异常 ---- */
-  if(press_pa == 0U)
+  /* ---- Step4: Q24.8 定点 Pa -> 0.1hPa 定点(÷256 转 Pa, ÷10 转 0.1hPa), 0 视为异常 ---- */
+  if(press_q248 == 0U)
   {
     return BMP280_ERR;
   }
-  data->press_x10 = (int32_t)(press_pa / 10U);
+  data->press_x10 = (int32_t)(press_q248 / 2560U);
 
   return BMP280_OK;
+}
+
+/*********************************************************************
+ * 函 数 名: bmp280_altitude
+ * 入口参数: press_x10  气压(0.1hPa)
+ * 出口参数: 无
+ * 返 回 值: int16_t  海拔(米, 四舍五入)
+ * 函数功能: 按国际标准大气模型(ISA)将气压换算为海拔高度
+ * 说    明: 采用 300~1100hPa、步长 10hPa 的查表 + 线性插值, 避免
+ *           依赖浮点 pow 库(microlib 不含); 参考海平面气压 1015.7hPa、
+ *           固定温度 25°C(对齐商家例程), 气压越低海拔越高, 超出表
+ *           范围自动钳位到边界值
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月05日
+ *     修改内容: 新增函数(BMP280 海拔显示需求)
+ **********************************************************************/
+int16_t bmp280_altitude(int32_t press_x10)
+{
+  /* 海拔查找表: 索引 i 对应气压 300+i*10 hPa, 值为参考 1015.7hPa/25°C 的海拔(米, 对齐商家) */
+  static const int16_t alt_table[81] =
+  {
+    11979, 11620, 11273, 10940, 10618, 10307, 10007, 9717, 9435, 9163,
+     8898,  8641,  8392,  8150,  7914,  7684,  7461,  7243,  7031,  6824,
+     6622,  6424,  6231,  6043,  5859,  5678,  5502,  5329,  5160,  4994,
+     4832,  4673,  4517,  4363,  4213,  4066,  3921,  3779,  3639,  3502,
+     3367,  3234,  3103,  2975,  2849,  2724,  2602,  2482,  2363,  2246,
+     2131,  2018,  1906,  1796,  1688,  1581,  1475,  1371,  1269,  1168,
+     1068,   969,   872,   776,   681,   587,   495,   404,   313,   224,
+      136,    49,   -37,  -122,  -206,  -289,  -371,  -452,  -533,  -612,
+     -691
+  };
+  int32_t idx;      /* 表索引(0~79) */
+  int32_t rem;      /* 插值余量(0~99) */
+  int32_t alt;      /* 插值结果(米) */
+
+  /* ---- Step1: 气压超范围钳位到表边界 ---- */
+  if(press_x10 <= 3000)
+  {
+    return alt_table[0];                           /* 300hPa -> 约 9164m */
+  }
+  if(press_x10 >= 11000)
+  {
+    return alt_table[80];                          /* 1100hPa -> 约 -698m */
+  }
+
+  /* ---- Step2: 计算表索引与插值余量 ---- */
+  idx = (press_x10 - 3000) / 100;                  /* 0~79 */
+  rem = (press_x10 - 3000) % 100;                  /* 0~99 */
+
+  /* ---- Step3: 线性插值(海拔随气压升高而降低, 差值为负) ---- */
+  alt = (int32_t)alt_table[idx]
+      + ((int32_t)alt_table[idx + 1] - (int32_t)alt_table[idx]) * rem / 100;
+
+  return (int16_t)alt;
 }

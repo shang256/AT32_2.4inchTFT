@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     lowpower.c
+  * @file     driver_lowpower.c
   * @brief    低功耗管理实现（DEEPSLEEP 停机模式 + EXINT3 按键唤醒）
   *
   * 实现说明：
@@ -24,8 +24,8 @@
 #pragma clang diagnostic ignored "-Wpadded"
 #endif
 
-#include "lowpower.h"
-#include "delay.h"
+#include "driver_lowpower.h"
+#include "driver_delay.h"
 
 /* 唤醒有效性确认: PB3 须持续按下(低电平)达到该时长(ms), 否则视为毛刺重睡 */
 #define LOWPOWER_WAKE_CONFIRM_MS   50U

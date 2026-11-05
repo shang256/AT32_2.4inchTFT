@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     encoder.h
+  * @file     driver_encoder.h
   * @brief    旋转编码器驱动接口（PUSH=PA0 / CH_A=PB4 / CH_B=PB5）
   *
   * 硬件说明：
@@ -20,8 +20,8 @@
   **************************************************************************
   */
 
-#ifndef __ENCODER_H
-#define __ENCODER_H
+#ifndef __DRIVER_ENCODER_H
+#define __DRIVER_ENCODER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,4 +66,4 @@ void encoder_tick_isr(void);             /* TMR7 1ms 采样中断处理(由向量表调用) 
 }
 #endif
 
-#endif /* __ENCODER_H */
+#endif /* __DRIVER_ENCODER_H */

@@ -14,7 +14,7 @@
   */
 
 #include "lv_port_disp.h"
-#include "lcd_st7789.h"
+#include "driver_lcd_st7789.h"
 
 /* 显示缓冲区: 一行 240 像素 x 40 行, RGB565 每像素 2 字节 */
 #define DISP_BUF_LINES  40

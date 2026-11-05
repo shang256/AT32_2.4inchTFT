@@ -1,12 +1,12 @@
 /**
   **************************************************************************
-  * @file     at32f403a_407_it.h
+  * @file     driver_at32f403a_407_it.h
   * @brief    ÖÐ¶Ï·þÎñº¯ÊýÉùÃ÷ÓëÏòÁ¿·Ö·¢½Ó¿Ú
   **************************************************************************
   */
 
-#ifndef __AT32F403A_407_IT_H
-#define __AT32F403A_407_IT_H
+#ifndef __DRIVER_AT32F403A_407_IT_H
+#define __DRIVER_AT32F403A_407_IT_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,4 +30,4 @@ void EXINT3_IRQHandler(void);       /* Í£»ú»½ÐÑÖÐ¶Ï(PB3 PUSH ÏÂ½µÑØ, ½öÍ£»úÆÚÊ¹Ä
 }
 #endif
 
-#endif /* __AT32F403A_407_IT_H */
+#endif /* __DRIVER_AT32F403A_407_IT_H */

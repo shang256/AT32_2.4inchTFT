@@ -26,9 +26,9 @@
   */
 
 #include "app_ui.h"
-#include "backlight.h"
-#include "encoder.h"
-#include "encoder_accel.h"
+#include "driver_backlight.h"
+#include "driver_encoder.h"
+#include "driver_encoder_accel.h"
 
 /* 界面控件句柄(LVGL 任务上下文访问, 无需保护) */
 static lv_obj_t  *s_title_label;      // 顶部标题
@@ -618,7 +618,7 @@ void app_ui_init(void)
 
   s_press_label = lv_label_create(lv_scr_act());
   lv_obj_set_style_text_color(s_press_label, lv_color_hex(0x90CAF9), 0);  /* 浅蓝: 气压 */
-  lv_label_set_text(s_press_label, "P:-- hPa");
+  lv_label_set_text(s_press_label, "P:-- hPa A:-- m");
   lv_obj_align(s_press_label, LV_ALIGN_TOP_MID, 0, 173);
 
   /* ---- Step5: 点按翻转按钮(初始 OFF 灰色, 发光脉冲动画) ---- */
@@ -786,6 +786,7 @@ void app_ui_sgp30_update(uint32_t eco2, uint32_t tvoc, uint32_t valid)
  * 入口参数: temp_x10    AHT20 温度(0.1°C)
  *           hum_x10     AHT20 湿度(0.1%RH)
  *           press_x10   BMP280 气压(0.1hPa)
+ *           altitude    BMP280 换算海拔(米)
  *           aht_valid   1=AHT20 在线且数据有效
  *           bmp_valid   1=BMP280 在线且数据有效
  * 出口参数: 无
@@ -801,7 +802,7 @@ void app_ui_sgp30_update(uint32_t eco2, uint32_t tvoc, uint32_t valid)
  *     修改内容: 新增函数(AHT20/BMP280 传感器需求)
  **********************************************************************/
 void app_ui_env_update(int32_t temp_x10, int32_t hum_x10, int32_t press_x10,
-                       int32_t aht_valid, int32_t bmp_valid)
+                       int32_t altitude, int32_t aht_valid, int32_t bmp_valid)
 {
   /* ---- Step1: AHT20 温湿度(在线则显示带一位小数的定点值) ---- */
   if(aht_valid != 0)
@@ -822,16 +823,17 @@ void app_ui_env_update(int32_t temp_x10, int32_t hum_x10, int32_t press_x10,
     lv_label_set_text(s_temp_label, "T:--C  H:--%");
   }
 
-  /* ---- Step3: BMP280 气压(在线则显示带一位小数的定点值) ---- */
+  /* ---- Step3: BMP280 气压 + 海拔(在线显示气压一位小数与海拔整数) ---- */
   if(bmp_valid != 0)
   {
     int p  = (int)(press_x10 / 10);              /* 气压整数位(hPa) */
     int pd = (int)(press_x10 % 10);              /* 气压小数位(0.1hPa) */
-    lv_label_set_text_fmt(s_press_label, "P:%d.%d hPa", p, pd);
+    lv_label_set_text_fmt(s_press_label, "P:%d.%dhPa A:%dm",
+                          p, pd, (int)altitude);
   }
   /* ---- Step4: BMP280 离线 -> 占位符, 不显示陈旧数据 ---- */
   else
   {
-    lv_label_set_text(s_press_label, "P:-- hPa");
+    lv_label_set_text(s_press_label, "P:-- hPa A:-- m");
   }
 }

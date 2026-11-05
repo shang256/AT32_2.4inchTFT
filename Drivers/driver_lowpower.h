@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     lowpower.h
+  * @file     driver_lowpower.h
   * @brief    µÍ¹¦ºÄ¹ÜÀí½Ó¿Ú£¨DEEPSLEEP Í£»úÄ£Ê½ + EXINT °´¼ü»½ÐÑ£©
   *
   * Ä£Ê½Ñ¡ÐÍËµÃ÷£º
@@ -20,8 +20,8 @@
   **************************************************************************
   */
 
-#ifndef __LOWPOWER_H
-#define __LOWPOWER_H
+#ifndef __DRIVER_LOWPOWER_H
+#define __DRIVER_LOWPOWER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,4 +50,4 @@ void    lowpower_enter_standby(void);     /* ½øÈë STANDBY(²»·µ»Ø), PA0 ÉÏÉýÑØ»½Ð
 }
 #endif
 
-#endif /* __LOWPOWER_H */
+#endif /* __DRIVER_LOWPOWER_H */

@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     encoder.c
+  * @file     driver_encoder.c
   * @brief    旋转编码器驱动实现（TMR7 1ms 同步采样 + 状态表四倍频解码）
   *
   * 实现说明：
@@ -24,7 +24,7 @@
 #pragma clang diagnostic ignored "-Wpadded"
 #endif
 
-#include "encoder.h"
+#include "driver_encoder.h"
 #include <stddef.h>
 
 /* PUSH 消抖所需连续一致采样次数(1ms/次, 约 5ms) */

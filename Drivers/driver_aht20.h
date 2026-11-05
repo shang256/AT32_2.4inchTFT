@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     aht20.h
+  * @file     driver_aht20.h
   * @brief    AHT20 温湿度传感器驱动接口（软件模拟 I2C，SCL=PA2 / SDA=PA3）
   *
   * 协议说明（Aosong AHT20 数据手册）：
@@ -15,8 +15,8 @@
   **************************************************************************
   */
 
-#ifndef __AHT20_H
-#define __AHT20_H
+#ifndef __DRIVER_AHT20_H
+#define __DRIVER_AHT20_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,4 +45,4 @@ aht20_status_t aht20_read(aht20_data_t *data);         /* 触发测量并读取温湿度（
 }
 #endif
 
-#endif /* __AHT20_H */
+#endif /* __DRIVER_AHT20_H */

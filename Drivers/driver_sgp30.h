@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     sgp30.h
+  * @file     driver_sgp30.h
   * @brief    SGP30 空气质量传感器驱动接口（eCO2 / TVOC, 软件模拟 I2C）
   *
   * 移植说明：
@@ -17,8 +17,8 @@
   **************************************************************************
   */
 
-#ifndef __SGP30_H
-#define __SGP30_H
+#ifndef __DRIVER_SGP30_H
+#define __DRIVER_SGP30_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,4 +47,4 @@ sgp30_status_t sgp30_read(sgp30_data_t *data);         /* 发送测量命令并读取 eCO
 }
 #endif
 
-#endif /* __SGP30_H */
+#endif /* __DRIVER_SGP30_H */

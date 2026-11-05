@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     sw_i2c.h
+  * @file     driver_sw_i2c.h
   * @brief    软件模拟 I2C 主机接口（SCL=PA2 / SDA=PA3, 开漏输出 + 位操作）
   *
   * 硬件说明：
@@ -15,8 +15,8 @@
   **************************************************************************
   */
 
-#ifndef __SW_I2C_H
-#define __SW_I2C_H
+#ifndef __DRIVER_SW_I2C_H
+#define __DRIVER_SW_I2C_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,9 +34,10 @@ void   sw_i2c_init(void);                       /* 初始化引脚并释放总线 */
 uint8_t sw_i2c_bus_idle_ok(void);               /* 总线空闲检测: 1=两线均高(上拉正常) 0=异常 */
 uint8_t sw_i2c_write(uint8_t dev_addr, const uint8_t *buf, uint16_t len);   /* 写: 地址(7位)+数据, 0=成功 */
 uint8_t sw_i2c_read(uint8_t dev_addr, uint8_t *buf, uint16_t len);          /* 读: 地址(7位)+数据, 0=成功 */
+uint8_t sw_i2c_write_then_read(uint8_t dev_addr, uint8_t reg, uint8_t *buf, uint16_t len);  /* 写寄存器地址 + Repeated START + 连续读, 0=成功 */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __SW_I2C_H */
+#endif /* __DRIVER_SW_I2C_H */

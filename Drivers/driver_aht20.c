@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     aht20.c
+  * @file     driver_aht20.c
   * @brief    AHT20 温湿度传感器驱动实现（软件模拟 I2C, SCL=PA2 / SDA=PA3）
   *
   * 参考 Aosong AHT20 数据手册, 采用 I2C 主机模式通信：
@@ -16,14 +16,16 @@
   */
 
 #include <stddef.h>
-#include "aht20.h"
-#include "sw_i2c.h"
-#include "delay.h"
+#include "driver_aht20.h"
+#include "driver_sw_i2c.h"
+#include "driver_delay.h"
 
 /** AHT20 7 位从机地址 */
 #define AHT20_I2C_ADDR           0x38U
 /** 初始化命令（0xBE 0x08 0x00） */
 #define AHT20_CMD_INIT           0xBEU
+/** 软复位命令（0xBA, 复位后需重新初始化校准） */
+#define AHT20_CMD_SOFT_RESET     0xBAU
 /** 触发测量命令（0xAC 0x33 0x00） */
 #define AHT20_CMD_TRIG           0xACU
 /** 读状态命令 */
@@ -31,12 +33,16 @@
 
 /** 上电稳定等待时间（ms） */
 #define AHT20_POWER_ON_MS        40U
+/** 软复位后等待时间（ms） */
+#define AHT20_SOFT_RESET_WAIT_MS 20U
 /** 初始化命令后等待时间（ms） */
 #define AHT20_INIT_WAIT_MS       10U
+/** 初始化后轮询校准状态的次数（10ms x N 次, 覆盖较慢模块的校准周期） */
+#define AHT20_INIT_RETRY_MAX     10U
 /** 触发测量后等待时间（ms） */
 #define AHT20_MEASURE_WAIT_MS    80U
 
-/** 状态寄存器：校准完成标志（1=校准中/未就绪） */
+/** 状态寄存器：校准完成标志（1=已校准, 0=未校准） */
 #define AHT20_STATUS_CAL_MASK    0x08U
 /** 状态寄存器：忙标志（1=测量进行中） */
 #define AHT20_STATUS_BUSY_MASK   0x80U
@@ -83,8 +89,8 @@ static aht20_status_t aht20_read_status(uint8_t *status)
  * 返 回 值: aht20_status_t  AHT20_OK=成功
  * 函数功能: 初始化软件 I2C 并完成 AHT20 上电校准
  * 说    明: 1. 先检测总线空闲电平, 便于快速定位接线/上拉问题;
- *           2. 上电稳定 40ms 后发送初始化命令, 等待 10ms;
- *           3. 读状态验证校准完成(bit3=0), 失败返回错误供调用方重试。
+ *           2. 上电稳定 40ms 后软复位(0xBA)再发初始化命令(0xBE), 等待;
+ *           3. 读状态验证校准完成(bit3=1 表示已校准), 失败返回错误供调用方重试。
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月04日
@@ -92,6 +98,7 @@ static aht20_status_t aht20_read_status(uint8_t *status)
  **********************************************************************/
 aht20_status_t aht20_init(void)
 {
+  const uint8_t soft_reset = AHT20_CMD_SOFT_RESET;   /* 0xBA 软复位 */
   const uint8_t cmd[3] =
   {
     AHT20_CMD_INIT,       /* 0xBE */
@@ -99,6 +106,7 @@ aht20_status_t aht20_init(void)
     0x00U                 /* 保留 */
   };
   uint8_t status = 0U;
+  uint8_t retry;                                 /* 校准完成轮询计数 */
 
   /* ---- Step1: 初始化 PA2/PA3 软件 I2C 并检查总线空闲电平 ---- */
   sw_i2c_init();
@@ -110,26 +118,32 @@ aht20_status_t aht20_init(void)
   /* ---- Step2: 上电稳定等待(AHT20 上电后需 >40ms 才可通信) ---- */
   delay_ms(AHT20_POWER_ON_MS);
 
-  /* ---- Step3: 发送初始化命令并等待校准完成 ---- */
+  /* ---- Step3: 软复位, 恢复到上电初始状态(解决残留异常状态导致校准失败) ---- */
+  sw_i2c_write(AHT20_I2C_ADDR, &soft_reset, 1U);
+  delay_ms(AHT20_SOFT_RESET_WAIT_MS);
+
+  /* ---- Step4: 发送初始化命令 ---- */
   if(sw_i2c_write(AHT20_I2C_ADDR, cmd, 3U) != 0U)
   {
     return AHT20_ERR;
   }
-  delay_ms(AHT20_INIT_WAIT_MS);
 
-  /* ---- Step4: 读状态验证校准标志已清零 ---- */
-  if(aht20_read_status(&status) != AHT20_OK)
+  /* ---- Step5: 轮询状态直到校准完成(bit3=1 表示已校准)或超时 ---- */
+  for(retry = 0U; retry < AHT20_INIT_RETRY_MAX; retry++)
   {
-    return AHT20_ERR;
-  }
-  if((status & AHT20_STATUS_CAL_MASK) != 0U)
-  {
-    return AHT20_ERR;                            /* 校准未完成, 需重试 */
+    delay_ms(AHT20_INIT_WAIT_MS);
+    if(aht20_read_status(&status) != AHT20_OK)
+    {
+      return AHT20_ERR;
+    }
+    if((status & AHT20_STATUS_CAL_MASK) != 0U)
+    {
+      s_initialized = 1U;
+      return AHT20_OK;
+    }
   }
 
-  s_initialized = 1U;
-
-  return AHT20_OK;
+  return AHT20_ERR;                              /* 超时仍未校准完成 */
 }
 
 /*********************************************************************

@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     backlight.c
+  * @file     driver_backlight.c
   * @brief    LCD 背光 PWM 驱动实现（TMR3_CH4 @ PB1，1kHz，20%~100%）
   *
   * 实现说明：
@@ -10,7 +10,7 @@
   **************************************************************************
   */
 
-#include "backlight.h"
+#include "driver_backlight.h"
 
 /* PWM 周期计数值(1MHz 计数时钟下即 1000 -> 1kHz) */
 #define BL_PWM_PERIOD          1000U

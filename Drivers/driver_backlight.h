@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     backlight.h
+  * @file     driver_backlight.h
   * @brief    LCD 背光 PWM 驱动接口（TMR3_CH4 @ PB1，占空比 20%~100%）
   *
   * 硬件说明：
@@ -10,8 +10,8 @@
   **************************************************************************
   */
 
-#ifndef __BACKLIGHT_H
-#define __BACKLIGHT_H
+#ifndef __DRIVER_BACKLIGHT_H
+#define __DRIVER_BACKLIGHT_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,4 +32,4 @@ uint8_t backlight_get_percent(void);            /* 读取当前亮度百分比 */
 }
 #endif
 
-#endif /* __BACKLIGHT_H */
+#endif /* __DRIVER_BACKLIGHT_H */

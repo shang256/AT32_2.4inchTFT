@@ -25,14 +25,14 @@
 
 #include "app_main.h"
 #include "app_ui.h"
-#include "delay.h"
-#include "lcd_st7789.h"
-#include "backlight.h"
-#include "encoder.h"
-#include "lowpower.h"
-#include "sgp30.h"
-#include "aht20.h"
-#include "bmp280.h"
+#include "driver_delay.h"
+#include "driver_lcd_st7789.h"
+#include "driver_backlight.h"
+#include "driver_encoder.h"
+#include "driver_lowpower.h"
+#include "driver_sgp30.h"
+#include "driver_aht20.h"
+#include "driver_bmp280.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
 
@@ -275,6 +275,7 @@ __NO_RETURN static void env_task(void *arg)
     msg.temp_x10  = 0;
     msg.hum_x10   = 0;
     msg.press_x10 = 0;
+    msg.altitude  = 0;
     msg.aht_valid = 0;
     msg.bmp_valid = 0;
 
@@ -316,8 +317,9 @@ __NO_RETURN static void env_task(void *arg)
       xSemaphoreGive(g_i2c_mutex);
       if(ok != 0U)
       {
-        msg.press_x10  = bmp.press_x10;
-        msg.bmp_valid  = 1;
+        msg.press_x10 = bmp.press_x10;
+        msg.altitude  = (int32_t)bmp280_altitude(bmp.press_x10);
+        msg.bmp_valid = 1;
       }
       else
       {
@@ -373,7 +375,7 @@ __NO_RETURN static void lvgl_task(void *arg)
     while(xQueueReceive(g_env_queue, &emsg, 0) == pdTRUE)
     {
       app_ui_env_update(emsg.temp_x10, emsg.hum_x10, emsg.press_x10,
-                        emsg.aht_valid, emsg.bmp_valid);
+                        emsg.altitude, emsg.aht_valid, emsg.bmp_valid);
     }
 
     /* ---- Step3: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
@@ -406,8 +408,8 @@ int main(void)
      默认关机态: 停机(DEEPSLEEP)等待 PUSH 按下(PB3=EXINT3 下降沿)
      唤醒, 函数返回即"开机", main 继续正常初始化流程;
      按复位/上电会再次进入停机(默认关机态) */
-  lowpower_init();
-  lowpower_boot_wait();
+//  lowpower_init();
+//  lowpower_boot_wait();
 
   /* ---- Step2: 驱动层初始化: 屏幕 / 背光 PWM / 编码器 ---- */
   LCD_Init();

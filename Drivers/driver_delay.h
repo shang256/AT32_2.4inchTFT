@@ -1,6 +1,6 @@
 /**
   **************************************************************************
-  * @file     delay.h
+  * @file     driver_delay.h
   * @brief    延时接口（DWT 周期计数器忙等实现，不占用 SysTick）
   *
   * 说明：
@@ -10,8 +10,8 @@
   **************************************************************************
   */
 
-#ifndef __DELAY_H
-#define __DELAY_H
+#ifndef __DRIVER_DELAY_H
+#define __DRIVER_DELAY_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,4 +27,4 @@ void delay_ms(uint32_t nms);    /* 毫秒级忙等延时（内部按 1ms 分段） */
 }
 #endif
 
-#endif /* __DELAY_H */
+#endif /* __DRIVER_DELAY_H */
