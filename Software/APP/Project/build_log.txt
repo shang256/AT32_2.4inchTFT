@@ -1,0 +1,5 @@
+*** Using Compiler 'V6.16', folder: 'C:\Keil_v5\ARM\ARMCLANG\Bin'
+Build target 'AT32F403A_LCD_Demo'
+After Build - User command #1: fromelf.exe --bin .\Objects\AT32F403A_LCD_Demo.axf -o  ./Output/AT32F403A_LCD_Demo.bin
+".\Objects\AT32F403A_LCD_Demo.axf" - 0 Error(s), 0 Warning(s).
+Build Time Elapsed:  00:00:05

@@ -1,0 +1,17 @@
+- generic [ref=e1]:
+  - generic [ref=e149]: "0"
+  - generic [ref=e150]: "10"
+  - generic [ref=e151]: "20"
+  - generic [ref=e152]: "30"
+  - generic [ref=e153]: "40"
+  - generic [ref=e154]: "50"
+  - generic [ref=e155]: "60"
+  - generic [ref=e156]: "80"
+  - generic [ref=e178]: KM/h
+  - generic [ref=e197]: SATELLITE
+  - generic [ref=e198]: "8"
+  - generic [ref=e199]: FIX
+  - generic [ref=e200]: RIDE TIME
+  - generic [ref=e221]:
+    - generic [ref=e223]: ODOMETER
+    - generic [ref=e234]: KM

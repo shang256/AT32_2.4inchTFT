@@ -1,0 +1,13 @@
+--cpu=Cortex-M4.fp.sp
+".\objects\startup_boot.o"
+".\objects\boot_main.o"
+".\objects\boot_protocol.o"
+".\objects\usb_cdc.o"
+".\objects\flash_drv.o"
+".\objects\system_at32f403a_407.o"
+".\objects\at32f403a_407_crm.o"
+".\objects\at32f403a_407_gpio.o"
+--library_type=microlib --strict --scatter ".\Objects\Bootloader.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Listings\Bootloader.map" -o .\Objects\Bootloader.axf
