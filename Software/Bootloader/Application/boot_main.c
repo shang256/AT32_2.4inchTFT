@@ -75,15 +75,19 @@ static void boot_system_clock_config(void)
  * 函数功能: 检测编码器按键 PB3 是否按住(上电瞬间的强制升级通道)
  * 说    明: PB3 复位默认为 JTAG(JTDO), 需先释放为 GPIO
  *           (SWJTAG_MUX_010, 仅 SWD 调试, 与 APP 工程一致);
- *           按键低有效(一脚接 GND, 内部上拉)
+ *           按键低有效(一脚接 GND, 内部上拉); 首次读到低后延时
+ *           复读一次确认, 抑制上电瞬间的电平抖动误触发
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月11日
  *     修改内容: 新增函数(BOOT 升级需求)
+ *     修改日期: 2026年11月12日
+ *     修改内容: 增加二次确认消抖(防止上电抖动误进升级模式)
  **********************************************************************/
 static uint8_t boot_pb3_pressed(void)
 {
   gpio_init_type gpio_init_struct;                      // GPIO 配置结构
+  volatile uint32_t delay;                              // 消抖延时循环计数
 
   /* ---- Step1: 使能 IOMUX/GPIOB 时钟并释放 JTAG ---- */
   crm_periph_clock_enable(CRM_IOMUX_PERIPH_CLOCK, TRUE);
@@ -97,41 +101,53 @@ static uint8_t boot_pb3_pressed(void)
   gpio_init_struct.gpio_pins = GPIO_PINS_3;
   gpio_init(GPIOB, &gpio_init_struct);
 
-  /* ---- Step3: 低电平=按住 ---- */
+  /* ---- Step3: 低电平=按住(延时约 1ms 后复读确认) ---- */
+  if(gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) != RESET)
+  {
+    return 0U;                                          // 首读高电平: 未按
+  }
+  for(delay = 0; delay < 60000U; delay++)
+  {
+  }                                                     // 约 1ms @240MHz
   return (gpio_input_data_bit_read(GPIOB, GPIO_PINS_3) == RESET) ? 1U : 0U;
 }
 
 /*********************************************************************
  * 函 数 名: boot_app_valid
- * 入口参数: param   参数页快照(bs_param_read 已填充)
+ * 入口参数: 无
  * 出口参数: 无
  * 返 回 值: uint8_t 1=APP 有效可跳转 0=无效
- * 函数功能: APP 有效性判定: 有效标志 + 镜像大小合法 + 栈顶/复位向量
- *           落在合法范围(不做全镜像 CRC, 上电延迟控制)
+ * 函数功能: APP 有效性判定: 仅校验向量表合法性(栈顶落在 SRAM 且
+ *           复位向量落在 APP 分区)
+ * 说    明: 不依赖参数页有效标志 —— APP 可能经调试器直接烧录
+ *           (未经升级流程, 参数页为空), 只要镜像向量表合法即跳转,
+ *           保证"不接 TypeC 正常上电 -> 直接进 APP"的主流程;
+ *           空片(全 0xFF)或损坏镜像的栈顶/复位向量自然落在合法
+ *           范围之外, 会被判无效进入升级模式(救砖通道)。
+ *           参数页的 APP_VALID/app_size/app_crc32 仅供 HELLO 上报
+ *           与升级请求通道使用, 不作为跳转门槛。
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月11日
  *     修改内容: 新增函数(BOOT 升级需求)
+ *     修改日期: 2026年11月12日
+ *     修改内容: 去除参数页标志门槛, 支持调试器直烧 APP 后正常
+ *               启动(不接 TypeC 的正常使用流程)
  **********************************************************************/
-static uint8_t boot_app_valid(const boot_param_t *param)
+static uint8_t boot_app_valid(void)
 {
   uint32_t sp;                                          // APP 栈顶(向量表[0])
   uint32_t pc;                                          // APP 入口(向量表[1])
 
-  /* ---- Step1: 参数页标志与大小 ---- */
-  if(((param->flags & BS_FLAG_APP_VALID) == 0U)
-     || (param->app_size == 0U) || (param->app_size > BS_APP_MAX_SIZE))
-  {
-    return 0U;
-  }
-
-  /* ---- Step2: 向量合法性: 栈顶落在 96KB SRAM, 入口落在 APP 区 ---- */
+  /* ---- Step1: 栈顶必须落在 96KB SRAM 范围 ---- */
   sp = *(volatile uint32_t *)BS_APP_BASE;
-  pc = *(volatile uint32_t *)(BS_APP_BASE + 4U);
   if((sp < 0x20000000UL) || (sp > (0x20000000UL + 0x18000UL)))
   {
     return 0U;
   }
+
+  /* ---- Step2: 复位向量必须落在 APP 分区内 ---- */
+  pc = *(volatile uint32_t *)(BS_APP_BASE + 4U);
   if((pc < BS_APP_BASE) || (pc >= (BS_APP_BASE + BS_APP_MAX_SIZE)))
   {
     return 0U;
@@ -184,6 +200,9 @@ void boot_jump_app(void)
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月11日
  *     修改内容: 新增函数(BOOT 升级需求)
+ *     修改日期: 2026年11月12日
+ *     修改内容: APP 有效性判定放宽为仅校验向量表(支持调试器
+ *               直烧 APP 的正常启动流程, 不接 TypeC 直接跳转)
  **********************************************************************/
 int main(void)
 {
@@ -192,10 +211,16 @@ int main(void)
   /* ---- Step1: 系统时钟 240MHz ---- */
   boot_system_clock_config();
 
-  /* ---- Step2: 读参数页并决策 ---- */
+  /* ---- Step2: 读参数页并决策 ----
+     正常流程(不接 TypeC): 无升级请求 + APP 向量表合法 + 未按 PB3
+     -> 直接跳转 APP, 不初始化 USB, 上电即进应用;
+     仅以下三种情况进入 USB 升级模式等待主机:
+     a) APP 在线触发的升级请求(参数页 UPDATE_REQ);
+     b) APP 镜像无效(空片/向量表损坏, 调试器直烧的合法 APP 不受影响);
+     c) 按住 PB3 上电(强制升级/救砖通道) */
   bs_param_read(&param);
   if((((param.flags & BS_FLAG_UPDATE_REQ) != 0U)        // a) APP 在线触发的升级请求
-      || (boot_app_valid(&param) == 0U)                 // b) APP 无效
+      || (boot_app_valid() == 0U)                       // b) APP 向量表非法
       || (boot_pb3_pressed() != 0U)))                   // c) 按住 PB3 强制升级
   {
     /* ---- Step3: 进入 USB 升级模式(flash 解锁 + CDC + 协议主循环) ---- */

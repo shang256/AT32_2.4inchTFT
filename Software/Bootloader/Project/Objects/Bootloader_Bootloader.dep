@@ -1,7 +1,7 @@
 Dependencies for Project 'Bootloader', Target 'Bootloader': (DO NOT MODIFY !)
 CompilerVersion: 6160000::V6.16::ARMCLANG
 F (..\MDK\startup_boot.s)(0x6AF3E22E)(--cpu Cortex-M4.fp.sp -g --pd "__MICROLIB SETA 1"-IC:\Users\Administrator\AppData\Local\Arm\Packs\ArteryTek\AT32F403A_407_DFP\2.2.3\Device\Include--pd "__UVISION_VERSION SETA 534"--pd "AT32F403ACGU7 SETA 1"--list .\listings\startup_boot.lst--xref -o .\objects\startup_boot.o--depend .\objects\startup_boot.d)
-F (..\Application\boot_main.c)(0x6AF3E1FD)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Drivers -I ../../Shared -I ../../APP/Libraries/CMSIS -I ../../APP/Libraries/Drivers/inc -Oz-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER-o ./objects/boot_main.o -MD)
+F (..\Application\boot_main.c)(0x6AF535E6)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Drivers -I ../../Shared -I ../../APP/Libraries/CMSIS -I ../../APP/Libraries/Drivers/inc -Oz-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER-o ./objects/boot_main.o -MD)
 I (..\..\APP\Libraries\CMSIS\at32f403a_407.h)(0x6AEAFC52)
 I (..\..\APP\Libraries\CMSIS\core_cm4.h)(0x6AEAFC52)
 I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
@@ -85,7 +85,7 @@ I (..\..\APP\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6AEAFC53)
 I (..\..\Shared\boot_shared.h)(0x6AF3E025)
 I (..\..\Shared\flash_drv.h)(0x6AF3E034)
 I (..\..\Shared\usb_cdc.h)(0x6AF3E09F)
-F (..\..\Shared\usb_cdc.c)(0x6AF3E260)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Drivers -I ../../Shared -I ../../APP/Libraries/CMSIS -I ../../APP/Libraries/Drivers/inc -Oz-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER-o ./objects/usb_cdc.o -MD)
+F (..\..\Shared\usb_cdc.c)(0x6AF534C6)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Drivers -I ../../Shared -I ../../APP/Libraries/CMSIS -I ../../APP/Libraries/Drivers/inc -Oz-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER-o ./objects/usb_cdc.o -MD)
 I (..\..\Shared\usb_cdc.h)(0x6AF3E09F)
 I (..\..\APP\Libraries\CMSIS\at32f403a_407.h)(0x6AEAFC52)
 I (..\..\APP\Libraries\CMSIS\core_cm4.h)(0x6AEAFC52)

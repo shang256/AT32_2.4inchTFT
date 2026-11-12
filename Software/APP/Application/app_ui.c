@@ -47,6 +47,7 @@ static lv_obj_t  *s_temp_label;      // AHT20 温湿度显示(弧下方)
 static lv_obj_t  *s_press_label;     // BMP280 气压显示(弧下方)
 static lv_obj_t  *s_power_label;     // 长按关机进度提示(默认隐藏)
 static lv_obj_t  *s_demo_img;        // 仪表页面 demo 仪表盘图背景(240x240 整屏)
+static lv_obj_t  *s_hr_label;        // MAX30102 心率/血氧显示行(顶部居中)
 
 /* 按钮翻转状态: 1=ON(蓝高亮) 0=OFF(灰暗显) */
 static uint8_t s_btn_state = 0;
@@ -574,13 +575,13 @@ void app_ui_init(void)
   /* ---- Step0: 初始化背光编码器变速器实例(变速逻辑见 encoder_accel 模块) ---- */
   encoder_accel_init(&s_bl_accel);
 
-  /* ---- Step0.1: 全屏 Demo 仪表盘图背景(240x240 RGB565, 最先创建确保位于底层) ---- */
-  s_demo_img = lv_img_create(lv_scr_act());
-  lv_img_set_src(s_demo_img, &ui_img_demo_gauge);   /* Figma 设计图(速度表/GPS/里程) */
-  lv_obj_set_pos(s_demo_img, 0, 0);
-  lv_obj_clear_flag(s_demo_img, LV_OBJ_FLAG_CLICKABLE);   /* 纯背景, 不拦截输入 */
-  lv_obj_move_background(s_demo_img);
-return;
+//  /* ---- Step0.1: 全屏 Demo 仪表盘图背景(240x240 RGB565, 最先创建确保位于底层) ---- */
+//  s_demo_img = lv_img_create(lv_scr_act());
+//  lv_img_set_src(s_demo_img, &ui_img_demo_gauge);   /* Figma 设计图(速度表/GPS/里程) */
+//  lv_obj_set_pos(s_demo_img, 0, 0);
+//  lv_obj_clear_flag(s_demo_img, LV_OBJ_FLAG_CLICKABLE);   /* 纯背景, 不拦截输入 */
+//  lv_obj_move_background(s_demo_img);
+//return;
   /* ---- Step1: 顶部标题 ---- */
   s_title_label = lv_label_create(lv_scr_act());
   lv_label_set_text(s_title_label, "Demo~");
@@ -633,6 +634,12 @@ return;
   lv_obj_set_style_text_color(s_press_label, lv_color_hex(0x90CAF9), 0);  /* 浅蓝: 气压 */
   lv_label_set_text(s_press_label, "P:-- hPa A:-- m");
   lv_obj_align(s_press_label, LV_ALIGN_TOP_MID, 0, 173);
+
+  /* ---- Step4.2: 顶部心率血氧行(MAX30102, 顶部居中不与弧心/底部重叠) ---- */
+  s_hr_label = lv_label_create(lv_scr_act());
+  lv_obj_set_style_text_color(s_hr_label, lv_color_hex(0xF06292), 0);     /* 粉红: 心率血氧 */
+  lv_label_set_text(s_hr_label, "HR:-- SpO2:--");
+  lv_obj_align(s_hr_label, LV_ALIGN_TOP_MID, 0, 2);
 
   /* ---- Step5: 点按翻转按钮(初始 OFF 灰色, 发光脉冲动画) ---- */
   s_btn = lv_btn_create(lv_scr_act());
@@ -849,4 +856,52 @@ void app_ui_env_update(int32_t temp_x10, int32_t hum_x10, int32_t press_x10,
   {
     lv_label_set_text(s_press_label, "P:-- hPa A:-- m");
   }
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_hr_update
+ * 入口参数: hr_bpm     心率(BPM), 0=信号不足
+ *           spo2       血氧饱和度(%), 0=信号不足
+ *           finger_on  1=检测到手指 0=未放置
+ *           valid      1=MAX30102 在线 0=离线
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 刷新 MAX30102 心率/血氧显示标签(顶部居中行)
+ * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
+ *           显示处理逻辑顺序(优先级从高到低):
+ *           Step1 模块离线 -> 全占位 "HR:-- SpO2:--";
+ *           Step2 无手指   -> 提示放置手指(心率血氧暂不可测);
+ *           Step3 手指在位但信号不足(算法收敛中/幅度弱) -> 数值占位;
+ *           Step4 信号有效 -> 显示实测 BPM 与 SpO2%。
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月12日
+ *     修改内容: 新增函数(MAX30102 心率血氧需求)
+ **********************************************************************/
+void app_ui_hr_update(int32_t hr_bpm, int32_t spo2, int32_t finger_on, int32_t valid)
+{
+  /* ---- Step1: 模块离线 -> 全占位符 ---- */
+  if(valid == 0)
+  {
+    lv_label_set_text(s_hr_label, "HR:-- SpO2:--");
+    return;
+  }
+
+  /* ---- Step2: 手指未放置 -> 引导提示(此时不做测量) ---- */
+  if(finger_on == 0)
+  {
+    lv_label_set_text(s_hr_label, "-- put finger on --");
+    return;
+  }
+
+  /* ---- Step3: 手指在位但信号不足(算法窗口收敛中) -> 数值占位 ---- */
+  if((hr_bpm == 0) || (spo2 == 0))
+  {
+    lv_label_set_text(s_hr_label, "HR:-- SpO2:--");
+    return;
+  }
+
+  /* ---- Step4: 信号有效 -> 显示实测心率与血氧 ---- */
+  lv_label_set_text_fmt(s_hr_label, "HR:%d SpO2:%d%%",
+                        (int)hr_bpm, (int)spo2);
 }

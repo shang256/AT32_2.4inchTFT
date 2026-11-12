@@ -34,6 +34,7 @@
 #include "driver_sgp30.h"
 #include "driver_aht20.h"
 #include "driver_bmp280.h"
+#include "driver_max30102.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
 
@@ -46,14 +47,16 @@ QueueHandle_t g_sensor_queue = NULL;
 /* 全局: 环境传感器数据队列(AHT20/BMP280 任务 -> LVGL 线程) */
 QueueHandle_t g_env_queue = NULL;
 
+/* 全局: 心率血氧数据队列(MAX30102 任务 -> LVGL 线程) */
+QueueHandle_t g_hr_queue = NULL;
+
 /* 全局: I2C 总线互斥锁(保护软件 I2C 总线的多任务并发访问) */
 SemaphoreHandle_t g_i2c_mutex = NULL;
 
 /* 任务栈大小(字: 4 字节) */
 #define TASK_STACK_LVGL    (uint16_t)(1024)   /* LVGL 任务 4KB 栈 */
 #define TASK_STACK_ENCODER (uint16_t)(256)    /* 编码器任务 1KB 栈 */
-#define TASK_STACK_SGP30   (uint16_t)(256)    /* SGP30 任务 1KB 栈 */
-#define TASK_STACK_ENV     (uint16_t)(512)    /* 环境传感器任务 2KB 栈(补偿含 64 位运算) */
+#define TASK_STACK_I2C     (uint16_t)(640)    /* I2C 总线传感器任务 2.5KB 栈(四设备顺序访问, 算法缓冲为静态) */
 
 /*********************************************************************
  * 函 数 名: system_clock_config
@@ -186,161 +189,198 @@ __NO_RETURN static void encoder_task(void *arg)
 }
 
 /*********************************************************************
- * 函 数 名: sgp30_task
+ * 函 数 名: i2c_sensor_task
  * 入口参数: arg     任务参数(未使用)
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: SGP30 传感器任务: 初始化传感器后以 1s 周期测量 eCO2/TVOC,
- *           将结果投递到队列由 LVGL 任务显示
- * 说    明: 1. 数据手册要求初始化后以 1s 周期持续测量以维护基线,
- *              首个约 15s 为预热期(固定输出 400ppm/0ppb, 属正常);
- *           2. 本任务优先级最低(1), 驱动内部 delay_ms 忙等(约 22ms)
- *              期间可随时被编码器/LVGL 任务抢占, 不阻塞 UI 刷新;
- *           3. 初始化失败(模块未接/总线异常)时每 2s 重试, 屏幕显示 "--"。
+ * 函数功能: I2C 总线统一传感器任务: 单任务独占软件 I2C 总线, 以
+ *           500ms 节拍轮询总线上挂载的全部设备
+ *           (SGP30 + AHT20 + BMP280 + MAX30102)并投递结果
+ * 节拍编排: 1. MAX30102 每拍(500ms)最先执行 —— FIFO 深度 32 x
+ *              50sps 仅容纳 640ms, 放在拍首保证两次读取间隔最稳,
+ *              稳态约 595ms(含 1s 设备段耗时), 不溢出;
+ *           2. SGP30/AHT20/BMP280 为 1s 周期, 在偶数拍执行;
+ *           3. 单任务独占总线, 互斥锁仍保留(段级 take/give, 开销
+ *              可忽略), 为未来新增 I2C 使用者保持并发安全;
+ *           4. 各设备独立就绪标志与离线重试分频(约 2s), 热插拔
+ *              自动恢复, 任一离线时对应字段显示 "--" 互不影响;
+ *           5. 驱动内部 delay_ms 忙等(AHT20 读约 80ms, 初始化最坏
+ *              约 240ms)期间可被编码器/LVGL 任务抢占, 不阻塞 UI;
+ *           6. SGP30 初始化后需 1s 周期持续测量维护基线, 前 15s
+ *              预热期固定输出 400ppm/0ppb 属正常现象。
  * 修改历史:
  *   1.修改人: CodeBuddy
- *     修改日期: 2026年10月15日
- *     修改内容: 新增函数(SGP30 移植需求)
+ *     修改日期: 2026年11月12日
+ *     修改内容: 新增函数(合并 sgp30_task/env_task/max30102_task
+ *               为单总线任务, 消除互斥竞争并节省任务栈)
  **********************************************************************/
-__NO_RETURN static void sgp30_task(void *arg)
+__NO_RETURN static void i2c_sensor_task(void *arg)
 {
-  app_sensor_msg_t msg;                            // 待投递的传感器数据
-  sgp30_data_t     data;                           // 驱动层测量结果
-  uint8_t          ok;                             // I2C 事务结果缓存
+  app_sensor_msg_t  smsg;                           // SGP30 待投递数据
+  app_env_msg_t     emsg;                           // 环境传感器待投递数据
+  app_hr_msg_t      hmsg;                           // 心率血氧待投递数据
+  sgp30_data_t      sgp;                            // SGP30 测量结果
+  aht20_data_t      aht;                            // AHT20 温湿度结果
+  bmp280_data_t     bmp;                            // BMP280 气压结果
+  max30102_result_t hr;                             // MAX30102 结果
+  uint8_t sgp_ready = 0U;                           // SGP30 就绪标志
+  uint8_t aht_ready = 0U;                           // AHT20 就绪标志
+  uint8_t bmp_ready = 0U;                           // BMP280 就绪标志
+  uint8_t hr_ready  = 0U;                           // MAX30102 就绪标志
+  uint8_t sgp_div   = 0U;                           // SGP30 离线重试分频(2 个 1s 拍 = 2s)
+  uint8_t hr_div    = 0U;                           // MAX30102 离线重试分频(4 拍 = 2s)
+  uint8_t tick      = 0U;                           // 500ms 节拍计数(偶数拍跑 1s 设备)
+  uint8_t ok;                                       // I2C 事务结果缓存
   (void)arg;
 
-  /* ---- Step1: 初始化 SGP30(失败则周期重试, 直到模块就绪) ----
-     软件 I2C 总线由 g_i2c_mutex 保护, 访问前后加锁/解锁,
-     避免与 env_task 并发操作同一条总线破坏时序 */
   while(1)
   {
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    ok = (sgp30_init() == SGP30_OK) ? 1U : 0U;
-    xSemaphoreGive(g_i2c_mutex);
-    if(ok != 0U)
-    {
-      break;
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-  }
+    /* ================= A 段: MAX30102 心率血氧(每 500ms, 拍首执行) ================= */
 
-  while(1)
-  {
-    /* ---- Step2: 加锁读取一次空气质量测量结果并组装消息 ---- */
-    xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-    ok = (sgp30_read(&data) == SGP30_OK) ? 1U : 0U;
-    xSemaphoreGive(g_i2c_mutex);
-
-    if(ok != 0U)
+    /* ---- A1: 未就绪则分频重试初始化(约 2s 一次) ---- */
+    if(hr_ready == 0U)
     {
-      msg.eco2  = (uint32_t)data.eco2;
-      msg.tvoc  = (uint32_t)data.tvoc;
-      msg.valid = 1U;
+      if(hr_div == 0U)
+      {
+        hr_div = 4U;
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        hr_ready = (max30102_init() == MAX30102_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+      }
+      else
+      {
+        hr_div--;
+      }
     }
+
+    /* ---- A2: 就绪则读 FIFO + 算法, 通信失败复位就绪(下周期重连) ---- */
+    if(hr_ready != 0U)
+    {
+      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+      ok = (max30102_read(&hr) == MAX30102_OK) ? 1U : 0U;
+      xSemaphoreGive(g_i2c_mutex);
+      if(ok != 0U)
+      {
+        hmsg.hr_bpm    = (int32_t)hr.hr_bpm;
+        hmsg.spo2      = (int32_t)hr.spo2;
+        hmsg.finger_on = (int32_t)hr.finger_on;
+        hmsg.valid     = 1;
+      }
+      else
+      {
+        hr_ready = 0U;
+        hmsg.hr_bpm = 0; hmsg.spo2 = 0; hmsg.finger_on = 0; hmsg.valid = 0;
+      }
+    }
+    /* ---- A3: 离线 -> 投递占位(UI 显示 "--") ---- */
     else
     {
-      msg.valid = 0U;                            /* 失败: UI 层显示 "--" */
+      hmsg.hr_bpm = 0; hmsg.spo2 = 0; hmsg.finger_on = 0; hmsg.valid = 0;
     }
+    xQueueSend(g_hr_queue, &hmsg, 0);
 
-    /* ---- Step3: 非阻塞投递(队列满则丢弃旧值, 保留最新趋势) ---- */
-    xQueueSend(g_sensor_queue, &msg, 0);
-
-    /* ---- Step4: 1s 测量周期, 维持 SGP30 基线更新 ---- */
-    vTaskDelay(pdMS_TO_TICKS(1000));
-  }
-}
-
-/*********************************************************************
- * 函 数 名: env_task
- * 入口参数: arg     任务参数(未使用)
- * 出口参数: 无
- * 返 回 值: void
- * 函数功能: 环境传感器任务: 周期性读取 AHT20 温湿度与 BMP280 气压,
- *           将结果投递到队列由 LVGL 任务显示
- * 说    明: 1. 两个传感器各自独立初始化/读取/在线判定, 任一离线时
- *              对应字段显示 "--", 互不影响;
- *           2. 初始化失败或读取失败会复位就绪标志, 下一周期重新
- *              初始化, 支持模块热插拔后自动恢复;
- *           3. 本任务优先级最低(1), 驱动内部 delay_ms 忙等(约 90ms)
- *              期间可被编码器/LVGL 任务抢占, 不阻塞 UI 刷新。
- * 修改历史:
- *   1.修改人: CodeBuddy
- *     修改日期: 2026年11月04日
- *     修改内容: 新增函数(AHT20/BMP280 传感器需求)
- **********************************************************************/
-__NO_RETURN static void env_task(void *arg)
-{
-  app_env_msg_t msg;                               // 待投递的环境传感器数据
-  aht20_data_t  aht;                               // AHT20 温湿度结果
-  bmp280_data_t bmp;                               // BMP280 气压结果
-  static uint8_t aht_ready = 0U;                   // AHT20 就绪标志
-  static uint8_t bmp_ready = 0U;                   // BMP280 就绪标志
-  uint8_t        ok;                               // I2C 事务结果缓存
-  (void)arg;
-
-  while(1)
-  {
-    /* ---- Step0: 每周期先清空消息(默认全部离线) ---- */
-    msg.temp_x10  = 0;
-    msg.hum_x10   = 0;
-    msg.press_x10 = 0;
-    msg.altitude  = 0;
-    msg.aht_valid = 0;
-    msg.bmp_valid = 0;
-
-    /* ---- Step1: AHT20 温湿度(加锁访问 I2C, 未就绪先初始化, 读失败复位) ---- */
-    if(aht_ready == 0U)
+    /* ================= B 段: 1s 周期设备(偶数拍执行) ================= */
+    if((tick & 1U) == 0U)
     {
-      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-      aht_ready = (aht20_init() == AHT20_OK) ? 1U : 0U;
-      xSemaphoreGive(g_i2c_mutex);
-    }
-    if(aht_ready != 0U)
-    {
-      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-      ok = (aht20_read(&aht) == AHT20_OK) ? 1U : 0U;
-      xSemaphoreGive(g_i2c_mutex);
-      if(ok != 0U)
+      /* ---- B1: SGP30 eCO2/TVOC(未就绪分频重试, 读取失败复位) ---- */
+      if(sgp_ready == 0U)
       {
-        msg.temp_x10  = (int32_t)aht.temp_x10;
-        msg.hum_x10   = (int32_t)aht.hum_x10;
-        msg.aht_valid = 1;
+        if(sgp_div == 0U)
+        {
+          sgp_div = 2U;                              /* 2 个 1s 拍 = 2s 重试间隔 */
+          xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+          sgp_ready = (sgp30_init() == SGP30_OK) ? 1U : 0U;
+          xSemaphoreGive(g_i2c_mutex);
+        }
+        else
+        {
+          sgp_div--;
+        }
+      }
+      if(sgp_ready != 0U)
+      {
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        ok = (sgp30_read(&sgp) == SGP30_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+        if(ok != 0U)
+        {
+          smsg.eco2  = (uint32_t)sgp.eco2;
+          smsg.tvoc  = (uint32_t)sgp.tvoc;
+          smsg.valid = 1U;
+        }
+        else
+        {
+          sgp_ready = 0U;                            /* 读失败: 复位就绪, 2s 后重连 */
+          smsg.valid = 0U;
+        }
       }
       else
       {
-        aht_ready = 0U;                          /* 读失败: 复位就绪, 下周期重新初始化 */
+        smsg.valid = 0U;                             /* 离线: UI 显示 "--" */
       }
-    }
+      xQueueSend(g_sensor_queue, &smsg, 0);
 
-    /* ---- Step2: BMP280 气压(加锁访问 I2C, 未就绪先初始化, 读失败复位) ---- */
-    if(bmp_ready == 0U)
-    {
-      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-      bmp_ready = (bmp280_init() == BMP280_OK) ? 1U : 0U;
-      xSemaphoreGive(g_i2c_mutex);
-    }
-    if(bmp_ready != 0U)
-    {
-      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
-      ok = (bmp280_read(&bmp) == BMP280_OK) ? 1U : 0U;
-      xSemaphoreGive(g_i2c_mutex);
-      if(ok != 0U)
+      /* ---- B2: AHT20 温湿度 + BMP280 气压海拔(各自独立就绪判定) ---- */
+      emsg.temp_x10  = 0;
+      emsg.hum_x10   = 0;
+      emsg.press_x10 = 0;
+      emsg.altitude  = 0;
+      emsg.aht_valid = 0;
+      emsg.bmp_valid = 0;
+
+      /* AHT20: 未就绪先初始化, 读失败复位(下个 1s 拍重新初始化) */
+      if(aht_ready == 0U)
       {
-        msg.press_x10 = bmp.press_x10;
-        msg.altitude  = (int32_t)bmp280_altitude(bmp.press_x10);
-        msg.bmp_valid = 1;
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        aht_ready = (aht20_init() == AHT20_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
       }
-      else
+      if(aht_ready != 0U)
       {
-        bmp_ready = 0U;                          /* 读失败: 复位就绪, 下周期重新初始化 */
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        ok = (aht20_read(&aht) == AHT20_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+        if(ok != 0U)
+        {
+          emsg.temp_x10  = (int32_t)aht.temp_x10;
+          emsg.hum_x10   = (int32_t)aht.hum_x10;
+          emsg.aht_valid = 1;
+        }
+        else
+        {
+          aht_ready = 0U;
+        }
       }
+
+      /* BMP280: 同模式, 输出气压 + 换算海拔 */
+      if(bmp_ready == 0U)
+      {
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        bmp_ready = (bmp280_init() == BMP280_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+      }
+      if(bmp_ready != 0U)
+      {
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        ok = (bmp280_read(&bmp) == BMP280_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+        if(ok != 0U)
+        {
+          emsg.press_x10 = bmp.press_x10;
+          emsg.altitude  = (int32_t)bmp280_altitude(bmp.press_x10);
+          emsg.bmp_valid = 1;
+        }
+        else
+        {
+          bmp_ready = 0U;
+        }
+      }
+      xQueueSend(g_env_queue, &emsg, 0);
     }
 
-    /* ---- Step3: 非阻塞投递(队列满则丢弃旧值, 保留最新数据) ---- */
-    xQueueSend(g_env_queue, &msg, 0);
-
-    /* ---- Step4: 1s 测量周期 ---- */
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    /* ================= C 段: 500ms 节拍 ================= */
+    vTaskDelay(pdMS_TO_TICKS(500));
+    tick++;
   }
 }
 
@@ -364,6 +404,7 @@ __NO_RETURN static void lvgl_task(void *arg)
   app_encoder_msg_t msg;                          // 从队列收到的事件
   app_sensor_msg_t  smsg;                         // 从队列收到的传感器数据
   app_env_msg_t     emsg;                         // 从队列收到的环境传感器数据
+  app_hr_msg_t      hmsg;                         // 从队列收到的心率血氧数据
   (void)arg;
 
   while(1)
@@ -385,6 +426,12 @@ __NO_RETURN static void lvgl_task(void *arg)
     {
       app_ui_env_update(emsg.temp_x10, emsg.hum_x10, emsg.press_x10,
                         emsg.altitude, emsg.aht_valid, emsg.bmp_valid);
+    }
+
+    /* ---- Step2.2: 非阻塞收取心率血氧数据(MAX30102), 转发 UI 显示 ---- */
+    while(xQueueReceive(g_hr_queue, &hmsg, 0) == pdTRUE)
+    {
+      app_ui_hr_update(hmsg.hr_bpm, hmsg.spo2, hmsg.finger_on, hmsg.valid);
     }
 
     /* ---- Step3: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
@@ -409,6 +456,10 @@ __NO_RETURN static void lvgl_task(void *arg)
  *     修改日期: 2026年11月11日
  *     修改内容: 新增 VTOR 重定位(0x08003000)与 USB 在线升级初始化
  *               (BOOT/APP 分区升级需求, APP 链接基址 0x08003000)
+ *     修改日期: 2026年11月12日
+ *     修改内容: 新增 MAX30102 心率血氧任务与队列(第五应用任务);
+ *               同日合并 SGP30/ENV/HR 三任务为单一 i2c_sensor_task
+ *               (单任务独占 I2C 总线, 节省约 2.5KB 任务栈)
  **********************************************************************/
 int main(void)
 {
@@ -443,15 +494,15 @@ int main(void)
   /* ---- Step4: 应用层初始化: 创建交互演示 UI(必须在 LVGL 任务内首次刷新前) ---- */
   app_ui_init();
 
-  /* ---- Step5: 创建事件队列与四个应用任务 ---- */
+  /* ---- Step5: 创建事件队列与三个应用任务 ---- */
   g_encoder_queue = xQueueCreate(8, sizeof(app_encoder_msg_t));
   g_sensor_queue  = xQueueCreate(4, sizeof(app_sensor_msg_t));
   g_env_queue     = xQueueCreate(4, sizeof(app_env_msg_t));
-  g_i2c_mutex     = xSemaphoreCreateMutex();     /* 保护软件 I2C 总线的并发访问 */
-  xTaskCreate(encoder_task, "ENC",  TASK_STACK_ENCODER, NULL, 3, NULL);
-  xTaskCreate(lvgl_task,    "LVGL", TASK_STACK_LVGL,    NULL, 2, NULL);
-  xTaskCreate(sgp30_task,   "SGP",  TASK_STACK_SGP30,   NULL, 1, NULL);
-  xTaskCreate(env_task,     "ENV",  TASK_STACK_ENV,     NULL, 1, NULL);
+  g_hr_queue      = xQueueCreate(4, sizeof(app_hr_msg_t));
+  g_i2c_mutex     = xSemaphoreCreateMutex();     /* 保护软件 I2C 总线的并发访问(预留) */
+  xTaskCreate(encoder_task,   "ENC", TASK_STACK_ENCODER, NULL, 3, NULL);
+  xTaskCreate(lvgl_task,      "LVGL",TASK_STACK_LVGL,    NULL, 2, NULL);
+  xTaskCreate(i2c_sensor_task,"I2C", TASK_STACK_I2C,     NULL, 1, NULL);
 
   /* ---- Step6: 启动 FreeRTOS 调度器(不再返回) ---- */
   vTaskStartScheduler();

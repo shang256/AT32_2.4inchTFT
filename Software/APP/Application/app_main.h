@@ -61,6 +61,19 @@ typedef struct
 /* 环境传感器数据队列(应用层共享, 由 app_main 创建) */
 extern QueueHandle_t g_env_queue;
 
+/* 心率血氧数据队列项: MAX30102 任务 -> LVGL 任务 单向传递
+   (统一使用 int32 字段, 避免混合宽度带来的结构体填充) */
+typedef struct
+{
+  int32_t  hr_bpm;       /* 心率(BPM), 0=信号不足 */
+  int32_t  spo2;         /* 血氧饱和度(%), 0=信号不足 */
+  int32_t  finger_on;    /* 1=检测到手指 0=未放置(提示放置手指) */
+  int32_t  valid;        /* 1=MAX30102 在线 0=离线(显示 "--") */
+} app_hr_msg_t;
+
+/* 心率血氧数据队列(应用层共享, 由 app_main 创建) */
+extern QueueHandle_t g_hr_queue;
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,7 @@
 ".\objects\driver_sgp30.o"
 ".\objects\driver_aht20.o"
 ".\objects\driver_bmp280.o"
+".\objects\driver_max30102.o"
 ".\objects\driver_lowpower.o"
 ".\objects\driver_at32f403a_407_it.o"
 ".\objects\tasks.o"

@@ -46,7 +46,7 @@ Strict one-way dependency order inside `Software/APP/`: `Application ¡ú Middlewa
 
 - **`Application/`** ¡ª business logic and task orchestration. `app_main.c/h` owns `main()`, clock init, and FreeRTOS task/queue creation; `app_ui.c/h` owns the LVGL demo UI and consumes events; `app_ui_img_demo.c/h` holds the tool-generated 240x240 gauge bitmap (`ui_img_demo_gauge`), drawn full-screen at the bottom layer of the dashboard.
 - **`Middleware/`** ¡ª OS/graphics configuration and ports. `freertos/FreeRTOSConfig.h` (240MHz / 1kHz tick / 20KB heap), `lvgl/lv_conf.h` (16bpp, `LV_COLOR_16_SWAP=1`, `LV_USE_PERF_MONITOR=1` ¡ú FPS/CPU overlay bottom-right), `lvgl/lv_port_disp.c/h` (240x40 draw buffer + flush callback), `lvgl/lv_rtos_tick.h` (LVGL heartbeat bridge).
-- **`Drivers/`** ¡ª peripheral drivers (filenames prefixed `driver_`), one pair per peripheral, mutually independent: `driver_lcd_st7789`, `driver_backlight` (TMR3 PWM), `driver_encoder` + `driver_encoder_accel`, `driver_lowpower`, `driver_sw_i2c`, `driver_sgp30`, `driver_aht20`, `driver_bmp280`, `driver_delay`, and `driver_at32f403a_407_it` (interrupt dispatch).
+- **`Drivers/`** ¡ª peripheral drivers (filenames prefixed `driver_`), one pair per peripheral, mutually independent: `driver_lcd_st7789`, `driver_backlight` (TMR3 PWM), `driver_encoder` + `driver_encoder_accel`, `driver_lowpower`, `driver_sw_i2c`, `driver_sgp30`, `driver_aht20`, `driver_bmp280`, `driver_max30102` (heart rate/SpO2, 0x57), `driver_delay`, and `driver_at32f403a_407_it` (interrupt dispatch).
 - **`Libraries/`** ¡ª vendor code: ArteryTek CMSIS + standard-peripheral library, FreeRTOS kernel, LVGL v8.3 source. Only the files listed in the uvprojx groups are compiled (the SPL subset excludes `at32f403a_407_pwc.c` on purpose ¡ª see power management).
 
 Adjacent directories that are **compiled but inactive** or **not compiled at all**:
@@ -61,7 +61,7 @@ Flash partitioning: BOOT 0x08000000~0x08002FFF (12KB budget, actual ~4.7KB) | AP
 
 BOOT decision at power-on: parameter page has `update_request` OR APP invalid (flag missing / stack pointer outside SRAM) OR PB3 held ¡ú USB upgrade mode; otherwise jump to APP (set VTOR/MSP, call reset vector, after `usb_cdc_deinit()` on the upgrade path only). The upgrade protocol (frames over USB CDC, see `Software/Shared/boot_shared.h`): HELLO ¡ú ERASE ¡ú DATA (1KB packets, ACK-sequenced) ¡ú VERIFY (bitwise CRC32 matching zlib) ¡ú DONE (write parameter page, jump). Flash writes only happen in main-loop/task context, never in USB ISRs ¡ª erase stalls instruction fetch.
 
-USB stack: `Software/Shared/usb_cdc.c` is a hand-written compact CDC stack (the SPL usb/flash .c files are absent from the repo). AT32F403A has an F1-style USBFS device controller (NOT OTG): PA11/PA12, PMA at 0x40006000 with 16-bit data at 32-bit spacing, endpoints via BTABLE. USB clock comes from `crm_usb_clock_source_select(CRM_USB_CLOCK_SOURCE_HICK)` (internal 48MHz, PLL-independent). EP0=control (32B packets), EP1=dual-direction bulk (CDC data), EP2=interrupt-in (notification, descriptor-only). `puo=0` enables the D+ pull-up. Writing EPxR must preserve both direction STAT fields ¡ª use `cdc_ept_write()`, not the stock SET_TXSTS/SET_RXSTS macros (they clear the other direction).
+USB stack: `Software/Shared/usb_cdc.c` is a hand-written compact CDC stack (the SPL usb/flash .c files are absent from the repo). AT32F403A has an F1-style USBFS device controller (NOT OTG): PA11/PA12, PMA at 0x40006000 with 16-bit data at 32-bit spacing, endpoints via BTABLE. USB clock comes from `crm_usb_clock_source_select(CRM_USB_CLOCK_SOURCE_HICK)` (internal 48MHz, PLL-independent). EP0=control (32B packets), EP1=dual-direction bulk (CDC data), EP2=interrupt-in (notification, descriptor-only). `puo=1` enables the D+ pull-up (official `usbd_connect` semantics; `puo=0` disconnects ¡ª getting this backwards leaves the device invisible to the host). Writing EPxR must preserve both direction STAT fields ¡ª use `cdc_ept_write()`, not the stock SET_TXSTS/SET_RXSTS macros (they clear the other direction).
 
 APP side: `app_usb_upgrade.c` keeps the CDC alive permanently (interrupt-driven, never touches LVGL/RTOS APIs; IRQ priorities 0xE/0xF are outside FreeRTOS's masked range). HELLO answers mode=APP; REBOOT sets a volatile flag handled in `encoder_task` ¡ª writes the parameter page, waits 100ms, `NVIC_SystemReset()`. This is what makes drag-and-drop upgrading work on a running device.
 
@@ -69,13 +69,12 @@ APP side: `app_usb_upgrade.c` keeps the CDC alive permanently (interrupt-driven,
 
 | Task | Priority | Stack | Role |
 |------|----------|-------|------|
-| `encoder_task` | 3 | 1KB | 20ms poll of the encoder driver; posts `app_encoder_msg_t` to a queue; handles the 3s long-press shutdown sequence. |
-| `lvgl_task` | 2 | 4KB | Sole owner of LVGL: 5ms `lv_timer_handler()`; drains encoder/sensor/env queues and forwards to `app_ui_*` handlers. |
-| `sgp30_task` | 1 | 1KB | 1s-period SGP30 read; posts `app_sensor_msg_t` to a queue; init retry every 2s. |
-| `env_task` | 1 | 2KB | 1s-period AHT20 (temp/humidity) + BMP280 (pressure/altitude) read; posts `app_env_msg_t`; per-sensor ready flags support hot-plug recovery. |
+| `encoder_task` | 3 | 1KB | 20ms poll of the encoder driver; posts `app_encoder_msg_t` to a queue; handles the 3s long-press shutdown sequence; checks the USB-upgrade reboot request each cycle. |
+| `lvgl_task` | 2 | 4KB | Sole owner of LVGL: 5ms `lv_timer_handler()`; drains encoder/sensor/env/hr queues and forwards to `app_ui_*` handlers. |
+| `i2c_sensor_task` | 1 | 2.5KB | **Single owner of the software I2C bus** ¡ª polls all four bus devices in a 500ms-tick loop: MAX30102 FIFO read + HR/SpO2 algorithm first every tick (FIFO depth constraint, ~595ms steady interval), then SGP30 + AHT20 + BMP280 on every 2nd tick (1s period). Per-device ready flags with ~2s retry dividers support hot-plug. Posts to `g_sensor_queue` / `g_env_queue` / `g_hr_queue`. |
 | idle | 0 | 512B | FreeRTOS built-in idle task. |
 
-Because LVGL is not thread-safe, **all** UI access is confined to `lvgl_task`. Cross-thread data flows only through FreeRTOS queues (`g_encoder_queue`, `g_sensor_queue`, `g_env_queue`); their item structs use uniform `int32_t`/`uint32_t` fields to avoid mixed-width padding. Producers touch only drivers and queues, never LVGL. The shared software I2C bus (SGP30 + AHT20 + BMP280 on PA2/PA3) is non-thread-safe: `sgp30_task` and `env_task` serialize with mutex `g_i2c_mutex` (`configUSE_MUTEXES=1`).
+Because LVGL is not thread-safe, **all** UI access is confined to `lvgl_task`. Cross-thread data flows only through FreeRTOS queues (`g_encoder_queue`, `g_sensor_queue`, `g_env_queue`, `g_hr_queue`); their item structs use uniform `int32_t`/`uint32_t` fields to avoid mixed-width padding. Producers touch only drivers and queues, never LVGL. The software I2C bus (SGP30 + AHT20 + BMP280 + MAX30102 on PA2/PA3) is non-thread-safe and now accessed **only** by `i2c_sensor_task` (single-task ownership); `g_i2c_mutex` (`configUSE_MUTEXES=1`) is still taken/given around each bus segment to keep concurrency safety if a future I2C consumer appears.
 
 ### Power management (the most subtle area)
 
@@ -102,7 +101,8 @@ Because LVGL is not thread-safe, **all** UI access is confined to `lvgl_task`. C
 - `aht20_init()` / `aht20_read()` ¡ª AHT20 (0x38) temp/humidity, fixed-point x10 output (0.1 ¡«C / 0.1 %RH).
 - `bmp280_init()` / `bmp280_read()` / `bmp280_altitude()` ¡ª BMP280 at address **0x77** (SDO floating/tied to VCC per `driver_bmp280.h`; use 0x76 only if SDO is grounded) ¡ª Bosch compensation, output 0.1 hPa fixed-point, altitude (m) via lookup + interpolation (ref 1015.7 hPa / 25 ¡«C, 8X/16X oversampling + IIR x16).
 - `LCD_Init()` / `LCD_WriteAreaBytes()` ¡ª SPI1 init + window RGB565 writes used by the LVGL flush callback.
+- `max30102_init()` / `max30102_read()` ¡ª MAX30102 heart-rate/SpO2 at 0x57 (Part ID 0x15), SpO2 mode (Red+IR, 100sps with SMP_AVE=2 ¡ú 50sps FIFO, 18-bit ADC). Driver embeds a fixed-point algorithm: 4.8s IR window ¡ú DC removal ¡ú 60%-height dynamic threshold peak detection ¡ú BPM (40¨C180, ¡Ý3 beats); SpO2 = 110 ? 25¡¤R with R = (ACred/DCred)/(ACir/DCir) via 64-bit integer math (70¨C100); finger detect via IR DC > 50000. Call period MUST stay ~500ms (FIFO depth 32 @ 50sps); overflow auto-recovers by resyncing RD=WR.
 
 ### Hardware pin map (quick reference)
 
-PB1 = backlight PWM; PB0/PA4/PA6 = LCD CS/DC/RES; PA5/PA7 = SPI1 SCK/MOSI; PB3 = encoder push (EXINT3, wake) / PB4-PB5 = encoder A/B (external pull-up); PA2/PA3 = shared software I2C (SGP30 + AHT20 + BMP280). PB3/PB4 are JTAG pins released to GPIO at `encoder_init` (SWD-only debug).
+PB1 = backlight PWM; PB0/PA4/PA6 = LCD CS/DC/RES; PA5/PA7 = SPI1 SCK/MOSI; PB3 = encoder push (EXINT3, wake) / PB4-PB5 = encoder A/B (external pull-up); PA2/PA3 = shared software I2C (SGP30 + AHT20 + BMP280 + MAX30102); PA11/PA12 = USB DM/DP (TypeC). PB3/PB4 are JTAG pins released to GPIO at `encoder_init` (SWD-only debug).

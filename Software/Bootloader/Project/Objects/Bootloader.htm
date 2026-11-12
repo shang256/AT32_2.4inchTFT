@@ -3,9 +3,9 @@
 <title>Static Call Graph - [.\Objects\Bootloader.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image .\Objects\Bootloader.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6160001: Last Updated: Wed Nov 11 11:35:17 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 6160001: Last Updated: Thu Nov 12 11:43:52 2026
 <BR><P>
-<H3>Maximum Stack Usage =         96 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
+<H3>Maximum Stack Usage =        104 bytes + Unknown(Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
 main &rArr; boot_protocol_run &rArr; bp_reply &rArr; usb_cdc_send &rArr; cdc_pma_write
 <P>
@@ -615,8 +615,8 @@ Global Symbols
 <BR>[Called By]<UL><LI><a href="#[57]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
 </UL>
 
-<P><STRONG><a name="[57]"></a>main</STRONG> (Thumb, 236 bytes, Stack size 24 bytes, boot_main.o(.text.main))
-<BR><BR>[Stack]<UL><LI>Max Depth = 96<LI>Call Chain = main &rArr; boot_protocol_run &rArr; bp_reply &rArr; usb_cdc_send &rArr; cdc_pma_write
+<P><STRONG><a name="[57]"></a>main</STRONG> (Thumb, 256 bytes, Stack size 32 bytes, boot_main.o(.text.main))
+<BR><BR>[Stack]<UL><LI>Max Depth = 104<LI>Call Chain = main &rArr; boot_protocol_run &rArr; bp_reply &rArr; usb_cdc_send &rArr; cdc_pma_write
 </UL>
 <BR>[Calls]<UL><LI><a href="#[88]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;usb_cdc_init
 <LI><a href="#[81]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;system_core_clock_update
@@ -710,11 +710,11 @@ Local Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cdc_epts_config
 </UL>
 
-<P><STRONG><a name="[6f]"></a>OUTLINED_FUNCTION_1</STRONG> (Thumb, 14 bytes, Stack size 0 bytes, usb_cdc.o(.text.OUTLINED_FUNCTION_1))
+<P><STRONG><a name="[6e]"></a>OUTLINED_FUNCTION_1</STRONG> (Thumb, 14 bytes, Stack size 0 bytes, usb_cdc.o(.text.OUTLINED_FUNCTION_1))
 <BR><BR>[Called By]<UL><LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cdc_epts_config
 </UL>
 
-<P><STRONG><a name="[6e]"></a>OUTLINED_FUNCTION_2</STRONG> (Thumb, 14 bytes, Stack size 0 bytes, usb_cdc.o(.text.OUTLINED_FUNCTION_2))
+<P><STRONG><a name="[6f]"></a>OUTLINED_FUNCTION_2</STRONG> (Thumb, 14 bytes, Stack size 0 bytes, usb_cdc.o(.text.OUTLINED_FUNCTION_2))
 <BR><BR>[Called By]<UL><LI><a href="#[6c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cdc_epts_config
 </UL>
 
@@ -732,8 +732,8 @@ Local Symbols
 <P><STRONG><a name="[6c]"></a>cdc_epts_config</STRONG> (Thumb, 304 bytes, Stack size 16 bytes, usb_cdc.o(.text.cdc_epts_config))
 <BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = cdc_epts_config
 </UL>
-<BR>[Calls]<UL><LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OUTLINED_FUNCTION_2
-<LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OUTLINED_FUNCTION_1
+<BR>[Calls]<UL><LI><a href="#[6f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OUTLINED_FUNCTION_2
+<LI><a href="#[6e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OUTLINED_FUNCTION_1
 <LI><a href="#[6d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;OUTLINED_FUNCTION_0
 </UL>
 <BR>[Called By]<UL><LI><a href="#[5f]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cdc_usb_isr

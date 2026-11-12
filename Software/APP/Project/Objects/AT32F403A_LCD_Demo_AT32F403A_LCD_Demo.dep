@@ -1,7 +1,7 @@
 Dependencies for Project 'AT32F403A_LCD_Demo', Target 'AT32F403A_LCD_Demo': (DO NOT MODIFY !)
 CompilerVersion: 6160000::V6.16::ARMCLANG
-F (..\Application\app_main.c)(0x6AF3E2E5)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_main.o -MD)
-I (..\Application\app_main.h)(0x6AEC4148)
+F (..\Application\app_main.c)(0x6AF522A0)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_main.o -MD)
+I (..\Application\app_main.h)(0x6AF5185C)
 I (..\Libraries\FreeRTOS\Source\include\FreeRTOS.h)(0x6AEAFC53)
 I (C:\Keil_v5\ARM\ARMCLANG\include\stddef.h)(0x6035A4A8)
 I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
@@ -15,7 +15,7 @@ I (..\Libraries\FreeRTOS\Source\include\task.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\list.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\queue.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\semphr.h)(0x6AEAFC53)
-I (..\Application\app_ui.h)(0x6AEC415D)
+I (..\Application\app_ui.h)(0x6AF518ED)
 I (..\Libraries\lvgl\lvgl.h)(0x6AEAFC53)
 I (..\Libraries\lvgl\src\misc\lv_log.h)(0x6AEAFC53)
 I (..\Libraries\lvgl\src\misc\..\lv_conf_internal.h)(0x6AEAFC53)
@@ -266,9 +266,10 @@ I (..\Drivers\driver_lowpower.h)(0x6AEC4231)
 I (..\Drivers\driver_sgp30.h)(0x6AEC4233)
 I (..\Drivers\driver_aht20.h)(0x6AEC4225)
 I (..\Drivers\driver_bmp280.h)(0x6AEC69C3)
+I (..\Drivers\driver_max30102.h)(0x6AF51769)
 I (..\Middleware\lvgl\lv_port_disp.h)(0x6AEAFC53)
-F (..\Application\app_ui.c)(0x6AF19053)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_ui.o -MD)
-I (..\Application\app_ui.h)(0x6AEC415D)
+F (..\Application\app_ui.c)(0x6AF536B2)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/app_ui.o -MD)
+I (..\Application\app_ui.h)(0x6AF518ED)
 I (..\Libraries\lvgl\lvgl.h)(0x6AEAFC53)
 I (..\Libraries\lvgl\src\misc\lv_log.h)(0x6AEAFC53)
 I (..\Libraries\lvgl\src\misc\..\lv_conf_internal.h)(0x6AEAFC53)
@@ -777,7 +778,7 @@ I (..\Libraries\FreeRTOS\Source\portable\GCC\ARM_CM4F\portmacro.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\mpu_wrappers.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\task.h)(0x6AEAFC53)
 I (..\Libraries\FreeRTOS\Source\include\list.h)(0x6AEAFC53)
-F (..\..\Shared\usb_cdc.c)(0x6AF3E260)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/usb_cdc.o -MD)
+F (..\..\Shared\usb_cdc.c)(0x6AF534C6)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/usb_cdc.o -MD)
 I (..\..\Shared\usb_cdc.h)(0x6AF3E09F)
 I (..\Libraries\CMSIS\at32f403a_407.h)(0x6AEAFC52)
 I (..\Libraries\CMSIS\core_cm4.h)(0x6AEAFC52)
@@ -1396,6 +1397,48 @@ I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
 I (..\Drivers\driver_bmp280.h)(0x6AEC69C3)
 I (..\Libraries\CMSIS\at32f403a_407.h)(0x6AEAFC52)
 I (..\Libraries\CMSIS\core_cm4.h)(0x6AEAFC52)
+I (..\Libraries\CMSIS\cmsis_version.h)(0x6AEAFC52)
+I (..\Libraries\CMSIS\cmsis_compiler.h)(0x6AEAFC52)
+I (..\Libraries\CMSIS\cmsis_armclang.h)(0x6AEAFC52)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_compat.h)(0x5EE13552)
+I (C:\Keil_v5\ARM\ARMCLANG\include\arm_acle.h)(0x6035A4A4)
+I (..\Libraries\CMSIS\mpu_armv7.h)(0x6AEAFC52)
+I (..\Libraries\CMSIS\system_at32f403a_407.h)(0x6AEAFC52)
+I (..\Libraries\Drivers\inc\at32f403a_407_def.h)(0x6AEAFC53)
+I (..\Libraries\CMSIS\at32f403a_407_conf.h)(0x6AEAFC52)
+I (..\Libraries\Drivers\inc\at32f403a_407_crm.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_tmr.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_rtc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_bpr.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_gpio.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_i2c.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_usart.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_pwc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_can.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_adc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_dac.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_spi.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_dma.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_debug.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_flash.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_crc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_wwdt.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_wdt.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_exint.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_sdio.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_xmc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_acc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_misc.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_usb.h)(0x6AEAFC53)
+I (..\Libraries\Drivers\inc\at32f403a_407_emac.h)(0x6AEAFC53)
+I (..\Drivers\driver_sw_i2c.h)(0x6AEC664E)
+I (..\Drivers\driver_delay.h)(0x6AEC422B)
+F (..\Drivers\driver_max30102.c)(0x6AF51849)(-xc -std=c99 --target=arm-arm-none-eabi -mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard -c-fno-rtti -funsigned-char -fshort-enums -fshort-wchar-D__MICROLIB -gdwarf-3 -O1 -ffunction-sections -w -I ../Application -I ../Middleware/lvgl -I ../Middleware/freertos -I ../Drivers -I ../../Shared -I ../Libraries/CMSIS -I ../Libraries/Drivers/inc -I ../Libraries/lvgl -I ../Libraries/lvgl/demos -I ../Libraries/FreeRTOS/Source/include -I ../Libraries/FreeRTOS/Source/portable/GCC/ARM_CM4F -I ../eezStudio/at_2.4/src/ui -I ../GUINxp/AT32/custom -I ../GUINxp/AT32/generated/guider_customer_fonts -I ../GUINxp/AT32/generated/guider_fonts -I ../GUINxp/AT32/generated-IC:/Users/Administrator/AppData/Local/Arm/Packs/ArteryTek/AT32F403A_407_DFP/2.2.3/Device/Include-D__UVISION_VERSION="534" -DAT32F403ACGU7 -DAT32F403ACGU7 -DUSE_STDPERIPH_DRIVER -DLV_CONF_INCLUDE_SIMPLE-o ./objects/driver_max30102.o -MD)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stddef.h)(0x6035A4A8)
+I (..\Drivers\driver_max30102.h)(0x6AF51769)
+I (..\Libraries\CMSIS\at32f403a_407.h)(0x6AEAFC52)
+I (..\Libraries\CMSIS\core_cm4.h)(0x6AEAFC52)
+I (C:\Keil_v5\ARM\ARMCLANG\include\stdint.h)(0x6035A4A8)
 I (..\Libraries\CMSIS\cmsis_version.h)(0x6AEAFC52)
 I (..\Libraries\CMSIS\cmsis_compiler.h)(0x6AEAFC52)
 I (..\Libraries\CMSIS\cmsis_armclang.h)(0x6AEAFC52)

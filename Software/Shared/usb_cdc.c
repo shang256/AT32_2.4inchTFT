@@ -674,7 +674,7 @@ void USBFS_L_CAN1_RX0_IRQHandler(void)                // USB 低优先级(复位等)
  * 返 回 值: void
  * 函数功能: 初始化 USB 外设(HICK 48MHz 时钟 + 端点配置)并连接总线
  * 说    明: 寄存器序列参照官方 usb_dev_init/usb_connect;
- *           puo=0 使能 D+ 1.5k 上拉(实测官方语义, puo=1 断开)
+ *           puo=1 使能 D+ 1.5k 上拉(官方 usbd_connect 语义, puo=0 断开)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月11日
@@ -717,7 +717,7 @@ void usb_cdc_init(void)
   /* ---- Step4: 端点配置并连接总线 ---- */
   cdc_epts_config();
   USB->ctrl_bit.disusb = 0;                           // 使能 PHY
-  USB->cfg_bit.puo = 0;                               // D+ 上拉生效(主机开始枚举)
+  USB->cfg_bit.puo = 1;                               // D+ 1.5k 上拉生效(主机开始枚举)
 }
 
 /*********************************************************************
@@ -734,7 +734,7 @@ void usb_cdc_init(void)
 void usb_cdc_deinit(void)
 {
   /* ---- Step1: 断开 D+ 上拉(主机侧设备消失) ---- */
-  USB->cfg_bit.puo = 1;                               // 关上拉
+  USB->cfg_bit.puo = 0;                               // 关 D+ 上拉
   USB->ctrl_bit.disusb = 1;                           // 关 PHY
 
   /* ---- Step2: 关中断并复位外设 ---- */
