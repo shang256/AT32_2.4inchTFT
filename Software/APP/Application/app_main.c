@@ -35,6 +35,7 @@
 #include "driver_aht20.h"
 #include "driver_bmp280.h"
 #include "driver_max30102.h"
+#include "driver_qmc6309.h"
 #include "lvgl.h"
 #include "lv_port_disp.h"
 
@@ -49,6 +50,9 @@ QueueHandle_t g_env_queue = NULL;
 
 /* 全局: 心率血氧数据队列(MAX30102 任务 -> LVGL 线程) */
 QueueHandle_t g_hr_queue = NULL;
+
+/* 全局: 指南针数据队列(QMC6309 -> LVGL 线程) */
+QueueHandle_t g_compass_queue = NULL;
 
 /* 全局: I2C 总线互斥锁(保护软件 I2C 总线的多任务并发访问) */
 SemaphoreHandle_t g_i2c_mutex = NULL;
@@ -195,7 +199,7 @@ __NO_RETURN static void encoder_task(void *arg)
  * 返 回 值: void
  * 函数功能: I2C 总线统一传感器任务: 单任务独占软件 I2C 总线, 以
  *           500ms 节拍轮询总线上挂载的全部设备
- *           (SGP30 + AHT20 + BMP280 + MAX30102)并投递结果
+ *           (SGP30 + AHT20 + BMP280 + MAX30102 + QMC6309)并投递结果
  * 节拍编排: 1. MAX30102 每拍(500ms)最先执行 —— FIFO 深度 32 x
  *              50sps 仅容纳 640ms, 放在拍首保证两次读取间隔最稳,
  *              稳态约 595ms(含 1s 设备段耗时), 不溢出;
@@ -212,23 +216,29 @@ __NO_RETURN static void encoder_task(void *arg)
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年11月12日
  *     修改内容: 新增函数(合并 sgp30_task/env_task/max30102_task
- *               为单总线任务, 消除互斥竞争并节省任务栈)
+ *               为单总线任务, 消除互斥竞争并节省任务栈);
+ *             2026年11月12日新增 QMC6309 磁力计轮询(A4 段, 500ms,
+ *               指南针页面需求)
  **********************************************************************/
 __NO_RETURN static void i2c_sensor_task(void *arg)
 {
   app_sensor_msg_t  smsg;                           // SGP30 待投递数据
   app_env_msg_t     emsg;                           // 环境传感器待投递数据
   app_hr_msg_t      hmsg;                           // 心率血氧待投递数据
+  app_compass_msg_t cmsg;                           // 指南针待投递数据
   sgp30_data_t      sgp;                            // SGP30 测量结果
   aht20_data_t      aht;                            // AHT20 温湿度结果
   bmp280_data_t     bmp;                            // BMP280 气压结果
   max30102_result_t hr;                             // MAX30102 结果
+  qmc6309_data_t    qmc;                            // QMC6309 三轴磁场结果
   uint8_t sgp_ready = 0U;                           // SGP30 就绪标志
   uint8_t aht_ready = 0U;                           // AHT20 就绪标志
   uint8_t bmp_ready = 0U;                           // BMP280 就绪标志
   uint8_t hr_ready  = 0U;                           // MAX30102 就绪标志
+  uint8_t qmc_ready = 0U;                           // QMC6309 就绪标志
   uint8_t sgp_div   = 0U;                           // SGP30 离线重试分频(2 个 1s 拍 = 2s)
   uint8_t hr_div    = 0U;                           // MAX30102 离线重试分频(4 拍 = 2s)
+  uint8_t qmc_div   = 0U;                           // QMC6309 离线重试分频(4 拍 = 2s)
   uint8_t tick      = 0U;                           // 500ms 节拍计数(偶数拍跑 1s 设备)
   uint8_t ok;                                       // I2C 事务结果缓存
   (void)arg;
@@ -278,6 +288,46 @@ __NO_RETURN static void i2c_sensor_task(void *arg)
       hmsg.hr_bpm = 0; hmsg.spo2 = 0; hmsg.finger_on = 0; hmsg.valid = 0;
     }
     xQueueSend(g_hr_queue, &hmsg, 0);
+
+    /* ---- A4: QMC6309 磁力计(每 500ms, 读取失败仅复位就绪不重发占位,
+       指南针页面保持上一次角度, 离线消息由 A4.1 补发) ---- */
+    if(qmc_ready == 0U)
+    {
+      if(qmc_div == 0U)
+      {
+        qmc_div = 4U;                               /* 4 拍 = 2s 重试间隔 */
+        xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+        qmc_ready = (qmc6309_init() == QMC6309_OK) ? 1U : 0U;
+        xSemaphoreGive(g_i2c_mutex);
+      }
+      else
+      {
+        qmc_div--;
+      }
+      /* A4.1 离线 -> 投递占位(UI 指南针显示 "--") */
+      cmsg.heading_x10 = 0; cmsg.raw_x = 0; cmsg.raw_y = 0; cmsg.raw_z = 0;
+      cmsg.valid = 0;
+      xQueueSend(g_compass_queue, &cmsg, 0);
+    }
+    if(qmc_ready != 0U)
+    {
+      xSemaphoreTake(g_i2c_mutex, portMAX_DELAY);
+      ok = (qmc6309_read(&qmc) == QMC6309_OK) ? 1U : 0U;
+      xSemaphoreGive(g_i2c_mutex);
+      if(ok != 0U)
+      {
+        cmsg.heading_x10 = qmc6309_heading(&qmc);
+        cmsg.raw_x = (int32_t)qmc.x;
+        cmsg.raw_y = (int32_t)qmc.y;
+        cmsg.raw_z = (int32_t)qmc.z;
+        cmsg.valid = 1;
+        xQueueSend(g_compass_queue, &cmsg, 0);
+      }
+      else
+      {
+        qmc_ready = 0U;                             /* 读失败: 复位就绪, 2s 后重连 */
+      }
+    }
 
     /* ================= B 段: 1s 周期设备(偶数拍执行) ================= */
     if((tick & 1U) == 0U)
@@ -405,6 +455,7 @@ __NO_RETURN static void lvgl_task(void *arg)
   app_sensor_msg_t  smsg;                         // 从队列收到的传感器数据
   app_env_msg_t     emsg;                         // 从队列收到的环境传感器数据
   app_hr_msg_t      hmsg;                         // 从队列收到的心率血氧数据
+  app_compass_msg_t cmsg;                         // 从队列收到的指南针数据
   (void)arg;
 
   while(1)
@@ -432,6 +483,13 @@ __NO_RETURN static void lvgl_task(void *arg)
     while(xQueueReceive(g_hr_queue, &hmsg, 0) == pdTRUE)
     {
       app_ui_hr_update(hmsg.hr_bpm, hmsg.spo2, hmsg.finger_on, hmsg.valid);
+    }
+
+    /* ---- Step2.3: 非阻塞收取指南针数据(QMC6309), 转发 UI 显示 ---- */
+    while(xQueueReceive(g_compass_queue, &cmsg, 0) == pdTRUE)
+    {
+      app_ui_compass_update(cmsg.heading_x10, cmsg.raw_x, cmsg.raw_y,
+                            cmsg.raw_z, cmsg.valid);
     }
 
     /* ---- Step3: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
@@ -499,6 +557,7 @@ int main(void)
   g_sensor_queue  = xQueueCreate(4, sizeof(app_sensor_msg_t));
   g_env_queue     = xQueueCreate(4, sizeof(app_env_msg_t));
   g_hr_queue      = xQueueCreate(4, sizeof(app_hr_msg_t));
+  g_compass_queue = xQueueCreate(4, sizeof(app_compass_msg_t));
   g_i2c_mutex     = xSemaphoreCreateMutex();     /* 保护软件 I2C 总线的并发访问(预留) */
   xTaskCreate(encoder_task,   "ENC", TASK_STACK_ENCODER, NULL, 3, NULL);
   xTaskCreate(lvgl_task,      "LVGL",TASK_STACK_LVGL,    NULL, 2, NULL);

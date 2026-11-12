@@ -11,9 +11,14 @@
   *     指示弧颜色随亮度三段渐变(20% 紫 -> 60% 青 -> 100% 荧光绿)；
   *   - 弧心大号百分比数字：旋转时上抛-回弹弹跳动画, 颜色与弧同步渐变；
   *   - 弧心下方两行小字显示 SGP30 的 eCO2/TVOC 实时值；
-  *   - 屏幕下部按钮(BTN)：点按编码器时状态翻转——背景色 300ms 渐变
-  *     过渡动画(灰<->蓝) + 按钮整体弹跳缩放；
-  *   - 长按 3s 关机时顶部红色进度提示, 松手未达阈值自动隐藏。
+  *   - 屏幕下部按钮(BTN, 悬于顶层跨页面常驻)：点按编码器切换页面——
+  *     0=仪表页 / 1=指南针页, lv_scr_load_anim 横向滑动过场动画,
+  *     按钮背景色 300ms 渐变过渡(灰<->荧光绿) + 发光脉冲提示当前页；
+  *   - 指南针页(独立 screen)：180x180 lv_meter 表盘(N 在顶部, 顺时针
+  *     递增), 红色指针指向磁北, 中心显示 0.1° 精度航向角与 16 方位名,
+  *     底部显示 X/Y 原始值(硬铁校准排查用), 数据来自 QMC6309 磁力计；
+  *   - 长按 3s 关机时顶部红色进度提示(顶层常驻, 两页均可见),
+  *     松手未达阈值自动隐藏。
   *
   * 动画实现要点：
   *   - 弧值平滑: lv_anim 对 lv_arc_set_value 做缓动插值, 快速旋转时
@@ -49,7 +54,17 @@ static lv_obj_t  *s_power_label;     // 长按关机进度提示(默认隐藏)
 static lv_obj_t  *s_demo_img;        // 仪表页面 demo 仪表盘图背景(240x240 整屏)
 static lv_obj_t  *s_hr_label;        // MAX30102 心率/血氧显示行(顶部居中)
 
-/* 按钮翻转状态: 1=ON(蓝高亮) 0=OFF(灰暗显) */
+/* 页面切换: 双 screen 架构, 按钮与关机提示挂顶层(跨页面常驻) */
+static lv_obj_t  *s_scr_dash;        // 仪表页 screen(默认页)
+static lv_obj_t  *s_scr_compass;     // 指南针页 screen
+static lv_obj_t  *s_compass_meter;   // 指南针 lv_meter 表盘对象
+static lv_meter_scale_t *s_compass_scale;    // 指南针刻度(0~360, N=顶部)
+static lv_meter_indicator_t *s_compass_ind;  // 指南针红色指针(指示航向)
+static lv_obj_t  *s_compass_hdg_label;       // 表盘中心航向角文字(0.1° 精度)
+static lv_obj_t  *s_compass_dir_label;       // 表盘中心 16 方位名文字
+static lv_obj_t  *s_compass_raw_label;       // 底部 X/Y 原始值(硬铁校准排查)
+
+/* 页面索引(原按钮翻转状态): 0=仪表页(灰) 1=指南针页(荧光绿) */
 static uint8_t s_btn_state = 0;
 
 /* 当前亮度百分比(缓存, 初始与背光驱动默认一致) */
@@ -452,23 +467,25 @@ static void app_ui_bl_refresh(void)
  * 入口参数: 无
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 按翻转状态立即设置按钮外观(无动画, 供初始化使用)
+ * 函数功能: 按页面索引立即设置按钮外观(无动画, 供初始化使用)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月17日
- *     修改内容: 新增函数(酷炫动画需求, 从 btn_refresh 拆分)
+ *     修改内容: 新增函数(酷炫动画需求, 从 btn_refresh 拆分);
+ *     修改日期: 2026年11月12日
+ *     修改内容: 按钮语义由 ON/OFF 翻转改为页面切换指示(仪表/指南针)
  **********************************************************************/
 static void app_ui_btn_apply(void)
 {
   if(s_btn_state != 0)
   {
     lv_obj_set_style_bg_color(s_btn, UI_BTN_ON_COLOR, 0);
-    lv_label_set_text(s_btn_label, "BTN: ON");
+    lv_label_set_text(s_btn_label, "PAGE: COMPASS");
   }
   else
   {
     lv_obj_set_style_bg_color(s_btn, UI_BTN_OFF_COLOR, 0);
-    lv_label_set_text(s_btn_label, "BTN: OFF");
+    lv_label_set_text(s_btn_label, "PAGE: DASH");
   }
 }
 
@@ -477,15 +494,18 @@ static void app_ui_btn_apply(void)
  * 入口参数: 无
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 按翻转状态播放按钮切换动画(背景色渐变 + 发光脉冲)
- * 说    明: ON 态蓝色高亮, OFF 态灰色暗显; 颜色在起止色间 300ms
- *           渐变过渡, 按钮同步阴影点亮-衰减(发光脉冲)
+ * 函数功能: 按页面索引播放按钮切换动画(背景色渐变 + 发光脉冲)
+ * 说    明: 指南针页荧光绿高亮, 仪表页灰色暗显; 颜色在起止色间 300ms
+ *           渐变过渡, 按钮同步阴影点亮-衰减(发光脉冲); 按钮文字
+ *           同步切换为当前页面名
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
  *     修改内容: 新增函数(点按按钮变化需求);
  *     修改日期: 2026年10月17日
- *     修改内容: 切换由瞬变改为颜色渐变+发光脉冲动画(酷炫动画需求)
+ *     修改内容: 切换由瞬变改为颜色渐变+发光脉冲动画(酷炫动画需求);
+ *     修改日期: 2026年11月12日
+ *     修改内容: 按钮语义由 ON/OFF 翻转改为页面切换指示(仪表/指南针)
  **********************************************************************/
 static void app_ui_btn_refresh(void)
 {
@@ -496,12 +516,12 @@ static void app_ui_btn_refresh(void)
   if(s_btn_state != 0)
   {
     s_btn_color_to = UI_BTN_ON_COLOR;
-    lv_label_set_text(s_btn_label, "BTN: ON");
+    lv_label_set_text(s_btn_label, "PAGE: COMPASS");
   }
   else
   {
     s_btn_color_to = UI_BTN_OFF_COLOR;
-    lv_label_set_text(s_btn_label, "BTN: OFF");
+    lv_label_set_text(s_btn_label, "PAGE: DASH");
   }
 
   /* ---- Step2: 背景色 300ms 渐变过渡 ---- */
@@ -549,16 +569,114 @@ static void debug_pin_timer_cb(lv_timer_t *timer)
 }
 
 /*********************************************************************
+ * 函 数 名: ui_compass_screen_create
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 创建指南针页面(独立 screen): lv_meter 表盘 + 红色指针 +
+ *           中心航向角/方位名文字 + 底部原始值排查行
+ * 说    明: 1. 刻度 0~360°(整数度, rotation=270 使 0°(北)位于表盘
+ *              正上方且顺时针递增, 指南针惯例);
+ *           2. 主刻度每 30° 带数字(90=E/180=S/270=W), N/E/S/W 四
+ *              字母另用独立 lv_label 布置在表盘四周作醒目标记;
+ *           3. 指针指示当前航向(航向=0 时指针指北);
+ *              本页面创建后不加载, 点按按钮时经 lv_scr_load_anim
+ *              横向滑动切入(auto_del=FALSE, 两屏均常驻内存);
+ *           4. 底部 X/Y 原始值行用于硬铁校准排查: 水平旋转数圈
+ *              观察 min/max 是否充分展开。
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月12日
+ *     修改内容: 新增函数(QMC6309 指南针页面需求)
+ **********************************************************************/
+static void ui_compass_screen_create(void)
+{
+  lv_obj_t *card;                                     // 方位字母通用句柄
+
+  /* ---- Step1: 创建独立 screen, 深色背景 ---- */
+  s_scr_compass = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(s_scr_compass, lv_color_hex(0x0D0D14), 0);
+
+  /* ---- Step2: 180x180 lv_meter 表盘(居中) ---- */
+  s_compass_meter = lv_meter_create(s_scr_compass);
+  lv_obj_set_size(s_compass_meter, 180, 180);
+  lv_obj_align(s_compass_meter, LV_ALIGN_CENTER, 0, -12);
+  lv_obj_set_style_bg_color(s_compass_meter, lv_color_hex(0x16161E), 0);
+  lv_obj_set_style_border_color(s_compass_meter, lv_color_hex(0x37474F), 0);
+  lv_obj_set_style_border_width(s_compass_meter, 2, 0);
+  lv_obj_set_style_radius(s_compass_meter, LV_RADIUS_CIRCLE, 0);
+  lv_obj_clear_flag(s_compass_meter, LV_OBJ_FLAG_CLICKABLE);
+
+  /* ---- Step3: 刻度: 0~360°, N 在正上方(rotation=270)顺时针递增 ---- */
+  s_compass_scale = lv_meter_add_scale(s_compass_meter);
+  lv_meter_set_scale_range(s_compass_meter, s_compass_scale, 0, 360, 360, 270);
+  lv_meter_set_scale_ticks(s_compass_meter, s_compass_scale,
+                           25, 2, 8, lv_color_hex(0x757575));            /* 细刻度=每 15° */
+  lv_meter_set_scale_major_ticks(s_compass_meter, s_compass_scale,
+                                 2, 3, 14, lv_color_hex(0xE0E0E0), 12);  /* 主刻度=每 30°(带数字) */
+
+  /* ---- Step4: 红色指针(航向角指示, 缩短避让刻度) ---- */
+  s_compass_ind = lv_meter_add_needle_line(s_compass_meter, s_compass_scale,
+                                           4, lv_color_hex(0xFF5252), -30);
+  lv_meter_set_indicator_value(s_compass_meter, s_compass_ind, 0);
+
+  /* ---- Step5: N/E/S/W 方位字母(红色 N 为传统航向表惯例) ---- */
+  card = lv_label_create(s_scr_compass);
+  lv_label_set_text(card, "N");
+  lv_obj_set_style_text_color(card, lv_color_hex(0xFF5252), 0);
+  lv_obj_set_style_text_font(card, &lv_font_montserrat_14, 0);
+  lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 6);
+
+  card = lv_label_create(s_scr_compass);
+  lv_label_set_text(card, "E");
+  lv_obj_set_style_text_color(card, lv_color_hex(0x9E9E9E), 0);
+  lv_obj_set_style_text_font(card, &lv_font_montserrat_14, 0);
+  lv_obj_align(card, LV_ALIGN_RIGHT_MID, -12, -12);
+
+  card = lv_label_create(s_scr_compass);
+  lv_label_set_text(card, "S");
+  lv_obj_set_style_text_color(card, lv_color_hex(0x9E9E9E), 0);
+  lv_obj_set_style_text_font(card, &lv_font_montserrat_14, 0);
+  lv_obj_align(card, LV_ALIGN_BOTTOM_MID, 0, -50);
+
+  card = lv_label_create(s_scr_compass);
+  lv_label_set_text(card, "W");
+  lv_obj_set_style_text_color(card, lv_color_hex(0x9E9E9E), 0);
+  lv_obj_set_style_text_font(card, &lv_font_montserrat_14, 0);
+  lv_obj_align(card, LV_ALIGN_LEFT_MID, 12, -12);
+
+  /* ---- Step6: 表盘中心航向角文字(0.1° 精度)与 16 方位名 ---- */
+  s_compass_hdg_label = lv_label_create(s_compass_meter);
+  lv_obj_set_style_text_color(s_compass_hdg_label, lv_color_hex(0x00E5FF), 0);
+  lv_obj_set_style_text_font(s_compass_hdg_label, &lv_font_montserrat_28, 0);
+  lv_label_set_text(s_compass_hdg_label, "--.-");
+  lv_obj_center(s_compass_hdg_label);
+
+  s_compass_dir_label = lv_label_create(s_compass_meter);
+  lv_obj_set_style_text_color(s_compass_dir_label, lv_color_hex(0x64DD17), 0);
+  lv_obj_set_style_text_font(s_compass_dir_label, &lv_font_montserrat_14, 0);
+  lv_label_set_text(s_compass_dir_label, "--");
+  lv_obj_align(s_compass_dir_label, LV_ALIGN_CENTER, 0, 22);
+
+  /* ---- Step7: 底部 X/Y 原始值排查行(硬铁校准观察) ---- */
+  s_compass_raw_label = lv_label_create(s_scr_compass);
+  lv_obj_set_style_text_color(s_compass_raw_label, lv_color_hex(0x616161), 0);
+  lv_label_set_text(s_compass_raw_label, "X:--  Y:--");
+  lv_obj_align(s_compass_raw_label, LV_ALIGN_BOTTOM_MID, 0, -4);
+}
+
+/*********************************************************************
  * 函 数 名: app_ui_init
  * 入口参数: 无
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 创建交互演示界面(标题/环形仪表盘/翻转按钮/自检行/提示)
+ * 函数功能: 创建交互演示界面(仪表页 + 指南针页双 screen 架构)
  * 说    明: 必须在 LVGL 任务首次刷新前调用(调度器启动前的 main 中
  *           调用, 创建阶段无并发访问风险);
- *           布局(240x240): 顶部标题+自检行 -> 中央 120x120 环形
- *           仪表盘(弧心嵌大号百分比与 eCO2/TVOC 两行小字) ->
- *           下部翻转按钮 -> 底部操作提示
+ *           布局(240x240): 仪表页: 顶部标题+自检行 -> 中央 120x120
+ *           环形仪表盘(弧心嵌大号百分比与 eCO2/TVOC 两行小字) ->
+ *           环境传感器两行 -> 底部操作提示; 指南针页: 180x180 表盘;
+ *           页面切换按钮与长按关机提示挂 lv_layer_top() 跨页面常驻
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
@@ -569,28 +687,34 @@ static void debug_pin_timer_cb(lv_timer_t *timer)
  *               新增全套切换动画(酷炫动画需求)
  *     修改日期: 2026年11月09日
  *     修改内容: 新增仪表页面全屏 Demo 仪表盘图背景(Figma 设计显示需求)
+ *     修改日期: 2026年11月12日
+ *     修改内容: 重构为双 screen 架构, 点按切换仪表/指南针页面,
+ *               按钮/关机提示移至顶层(QMC6309 指南针页面需求)
  **********************************************************************/
 void app_ui_init(void)
 {
   /* ---- Step0: 初始化背光编码器变速器实例(变速逻辑见 encoder_accel 模块) ---- */
   encoder_accel_init(&s_bl_accel);
 
-//  /* ---- Step0.1: 全屏 Demo 仪表盘图背景(240x240 RGB565, 最先创建确保位于底层) ---- */
-//  s_demo_img = lv_img_create(lv_scr_act());
+  /* ---- Step0.1: 创建仪表页 screen(默认页, 全部仪表控件挂其下) ---- */
+  s_scr_dash = lv_obj_create(NULL);
+
+//  /* ---- Step0.2: 全屏 Demo 仪表盘图背景(240x240 RGB565, 最先创建确保位于底层) ---- */
+//  s_demo_img = lv_img_create(s_scr_dash);
 //  lv_img_set_src(s_demo_img, &ui_img_demo_gauge);   /* Figma 设计图(速度表/GPS/里程) */
 //  lv_obj_set_pos(s_demo_img, 0, 0);
 //  lv_obj_clear_flag(s_demo_img, LV_OBJ_FLAG_CLICKABLE);   /* 纯背景, 不拦截输入 */
 //  lv_obj_move_background(s_demo_img);
 //return;
   /* ---- Step1: 顶部标题 ---- */
-  s_title_label = lv_label_create(lv_scr_act());
+  s_title_label = lv_label_create(s_scr_dash);
   lv_label_set_text(s_title_label, "Demo~");
   lv_obj_set_style_text_color(s_title_label, lv_color_white(), 0);
   lv_obj_set_style_text_font(s_title_label, &lv_font_montserrat_28, 0);
   lv_obj_align(s_title_label, LV_ALIGN_TOP_MID, 0, 4);
 
   /* ---- Step2: 中央 270° 环形仪表盘(圆头弧, 隐藏 knob) ---- */
-  s_bl_arc = lv_arc_create(lv_scr_act());
+  s_bl_arc = lv_arc_create(s_scr_dash);
   lv_obj_set_size(s_bl_arc, 120, 120);
   lv_obj_align(s_bl_arc, LV_ALIGN_TOP_MID, 0, 36);
   lv_arc_set_rotation(s_bl_arc, 135);                      /* 起点左下, 经典仪表造型 */
@@ -625,25 +749,25 @@ void app_ui_init(void)
   lv_obj_align(s_tvoc_label, LV_ALIGN_CENTER, 0, 24);
 
   /* ---- Step4.1: 弧下方环境传感器两行小字(AHT20 温湿度 / BMP280 气压) ---- */
-  s_temp_label = lv_label_create(lv_scr_act());
+  s_temp_label = lv_label_create(s_scr_dash);
   lv_obj_set_style_text_color(s_temp_label, lv_color_hex(0xFFB74D), 0);   /* 橙色: 温湿度 */
   lv_label_set_text(s_temp_label, "T:--C  H:--%");
   lv_obj_align(s_temp_label, LV_ALIGN_TOP_MID, 0, 156);
 
-  s_press_label = lv_label_create(lv_scr_act());
+  s_press_label = lv_label_create(s_scr_dash);
   lv_obj_set_style_text_color(s_press_label, lv_color_hex(0x90CAF9), 0);  /* 浅蓝: 气压 */
   lv_label_set_text(s_press_label, "P:-- hPa A:-- m");
   lv_obj_align(s_press_label, LV_ALIGN_TOP_MID, 0, 173);
 
   /* ---- Step4.2: 顶部心率血氧行(MAX30102, 顶部居中不与弧心/底部重叠) ---- */
-  s_hr_label = lv_label_create(lv_scr_act());
+  s_hr_label = lv_label_create(s_scr_dash);
   lv_obj_set_style_text_color(s_hr_label, lv_color_hex(0xF06292), 0);     /* 粉红: 心率血氧 */
   lv_label_set_text(s_hr_label, "HR:-- SpO2:--");
   lv_obj_align(s_hr_label, LV_ALIGN_TOP_MID, 0, 2);
 
-  /* ---- Step5: 点按翻转按钮(初始 OFF 灰色, 发光脉冲动画) ---- */
-  s_btn = lv_btn_create(lv_scr_act());
-  lv_obj_set_size(s_btn, 140, 34);
+  /* ---- Step5: 页面切换按钮(挂顶层, 跨页面常驻; 初始=仪表页灰色) ---- */
+  s_btn = lv_btn_create(lv_layer_top());
+  lv_obj_set_size(s_btn, 150, 34);
   lv_obj_align(s_btn, LV_ALIGN_BOTTOM_MID, 0, -16);
   lv_obj_clear_flag(s_btn, LV_OBJ_FLAG_CLICKABLE);   /* 输入来自编码器, 禁触屏点击 */
 
@@ -651,27 +775,32 @@ void app_ui_init(void)
   lv_obj_center(s_btn_label);
 
   /* ---- Step6: 底部操作提示(单行, 为环境传感器显示腾出空间) ---- */
-  s_hint_label = lv_label_create(lv_scr_act());
-  lv_label_set_text(s_hint_label, "Rotate:light  Push:btn");
+  s_hint_label = lv_label_create(s_scr_dash);
+  lv_label_set_text(s_hint_label, "Rotate:light  Push:page");
   lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0x9E9E9E), 0);
   lv_obj_set_style_text_align(s_hint_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(s_hint_label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
   /* ---- Step6.1: 引脚电平自检行(右上角, 硬件排查用, 100ms 刷新) ---- */
-  s_debug_label = lv_label_create(lv_scr_act());
+  s_debug_label = lv_label_create(s_scr_dash);
   lv_obj_set_style_text_color(s_debug_label, lv_color_hex(0x4CAF50), 0);
   lv_label_set_text(s_debug_label, "A:- B:- P:-");
   lv_obj_align(s_debug_label, LV_ALIGN_TOP_RIGHT, -4, 4);
   lv_timer_create(debug_pin_timer_cb, 100, NULL);
 
-  /* ---- Step6.2: 长按关机进度提示(顶部, 出现时盖住标题, 默认隐藏) ---- */
-  s_power_label = lv_label_create(lv_scr_act());
+  /* ---- Step6.2: 长按关机进度提示(挂顶层跨页面常驻, 出现时盖住标题,
+      默认隐藏; 仪表页与指南针页长按关机均可见进度) ---- */
+  s_power_label = lv_label_create(lv_layer_top());
   lv_obj_set_style_text_color(s_power_label, lv_color_hex(0xE53935), 0);
   lv_label_set_text(s_power_label, "Hold 3s: power off");
   lv_obj_align(s_power_label, LV_ALIGN_TOP_MID, 0, 8);
   lv_obj_add_flag(s_power_label, LV_OBJ_FLAG_HIDDEN);
 
-  /* ---- Step7: 刷新初始显示(亮度 100%, 按钮 OFF 立即应用不播动画) ---- */
+  /* ---- Step6.3: 创建指南针页面(独立 screen, 点按按钮时切入) ---- */
+  ui_compass_screen_create();
+
+  /* ---- Step7: 加载仪表页为当前屏(无动画)并刷新初始显示 ---- */
+  lv_scr_load(s_scr_dash);
   app_ui_bl_refresh();
   app_ui_btn_apply();
 }
@@ -718,7 +847,8 @@ static void encoder_apply_delta(int32_t delta)
  * 出口参数: 无
  * 返 回 值: void
  * 函数功能: 处理编码器事件: 旋转调节背光亮度(弧形仪表动画联动),
- *           点按翻转按钮(颜色渐变+弹跳动画), 长按显示关机进度提示
+ *           点按切换仪表/指南针页面(滑动过场+按钮渐变动画),
+ *           长按显示关机进度提示
  * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
  *           旋转经 encoder_apply_delta 变速映射: 慢速每格 1% 精准,
  *           快速按速度放大步进(详见该函数); 长按进度由 encoder_task
@@ -729,7 +859,9 @@ static void encoder_apply_delta(int32_t delta)
  *     修改内容: 新增函数(旋转调背光 + 点按翻转按钮交互);
  *     修改日期: 2026年10月17日
  *     修改内容: 签名增加 hold_ms, 新增长按 3s 关机进度提示(低功耗需求);
- *               旋转/点按路径升级为弧形仪表+渐变+弹跳动画(酷炫动画需求)
+ *               旋转/点按路径升级为弧形仪表+渐变+弹跳动画(酷炫动画需求);
+ *     修改日期: 2026年11月12日
+ *     修改内容: 点按语义由按钮翻转改为页面切换(仪表/指南针)
  **********************************************************************/
 void app_ui_encoder_event(int32_t delta, int32_t push_pressed, int32_t hold_ms)
 {
@@ -739,10 +871,18 @@ void app_ui_encoder_event(int32_t delta, int32_t push_pressed, int32_t hold_ms)
     encoder_apply_delta(delta);
   }
 
-  /* ---- Step2: 点按沿事件 -> 翻转按钮状态并播放切换动画 ---- */
+  /* ---- Step2: 点按沿事件 -> 切换页面(滑动过场)并刷新按钮动画 ---- */
   if(push_pressed != 0)
   {
     s_btn_state = (uint8_t)(s_btn_state ? 0 : 1);
+    if(s_btn_state != 0)
+    {
+      lv_scr_load_anim(s_scr_compass, LV_SCR_LOAD_ANIM_MOVE_LEFT, 250, 0, FALSE);
+    }
+    else
+    {
+      lv_scr_load_anim(s_scr_dash, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 250, 0, FALSE);
+    }
     app_ui_btn_refresh();
   }
 
@@ -904,4 +1044,62 @@ void app_ui_hr_update(int32_t hr_bpm, int32_t spo2, int32_t finger_on, int32_t v
   /* ---- Step4: 信号有效 -> 显示实测心率与血氧 ---- */
   lv_label_set_text_fmt(s_hr_label, "HR:%d SpO2:%d%%",
                         (int)hr_bpm, (int)spo2);
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_compass_update
+ * 入口参数: heading_x10  磁航向角(0.1° 单位, 0~3599, 北=0 顺时针)
+ *           raw_x        X 轴磁场原始值(LSB, 校准排查显示用)
+ *           raw_y        Y 轴磁场原始值(LSB)
+ *           raw_z        Z 轴磁场原始值(LSB)
+ *           valid        1=QMC6309 在线且数据有效 0=离线
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 刷新指南针页面(指针/航向角/16 方位名/原始值排查行)
+ * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
+ *           离线时文字回占位符但指针保持上次位置(不抖动回零);
+ *           16 方位名按 22.5° 一格划分: idx = (heading+11.25°)/22.5°;
+ *           底部原始值行供硬铁校准观察: 水平旋转数圈 X/Y 的
+ *           min/max 充分展开后指向即收敛(驱动内自动去中心偏移)
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月12日
+ *     修改内容: 新增函数(QMC6309 指南针页面需求)
+ **********************************************************************/
+void app_ui_compass_update(int32_t heading_x10, int32_t raw_x, int32_t raw_y,
+                           int32_t raw_z, int32_t valid)
+{
+  static const char *dir_name[16] =
+  {
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
+  };
+  int32_t hd;       /* 航向整数位(°) */
+  int32_t hdd;      /* 航向小数位(0.1°) */
+  int32_t dir_idx;  /* 16 方位索引(0~15) */
+
+  (void)raw_z;      /* Z 轴仅队列透传保存, 页面暂不显示(水平放置不参与计算) */
+
+  /* ---- Step1: 离线 -> 文字占位, 指针保持上次角度 ---- */
+  if(valid == 0)
+  {
+    lv_label_set_text(s_compass_hdg_label, "--.-");
+    lv_label_set_text(s_compass_dir_label, "--");
+    lv_label_set_text(s_compass_raw_label, "X:--  Y:--");
+    return;
+  }
+
+  /* ---- Step2: 指针/航向角刷新(表盘 0~360° 整数度映射, 文字保留 0.1°) ---- */
+  hd = heading_x10 / 10;
+  hdd = heading_x10 % 10;
+  lv_meter_set_indicator_value(s_compass_meter, s_compass_ind, hd);
+  lv_label_set_text_fmt(s_compass_hdg_label, "%d.%d", (int)hd, (int)hdd);
+
+  /* ---- Step3: 16 方位名((heading + 半格) / 一格宽) ---- */
+  dir_idx = ((heading_x10 + 1125) / 2250) % 16;
+  lv_label_set_text(s_compass_dir_label, dir_name[dir_idx]);
+
+  /* ---- Step4: 底部原始值排查行(硬铁校准观察) ---- */
+  lv_label_set_text_fmt(s_compass_raw_label, "X:%d  Y:%d",
+                        (int)raw_x, (int)raw_y);
 }

@@ -74,6 +74,20 @@ typedef struct
 /* 心率血氧数据队列(应用层共享, 由 app_main 创建) */
 extern QueueHandle_t g_hr_queue;
 
+/* 指南针数据队列项: QMC6309 -> LVGL 任务 单向传递
+   (统一使用 int32 字段, 避免混合宽度带来的结构体填充) */
+typedef struct
+{
+  int32_t  heading_x10;   /* 磁航向角(0.1°, 0~3599, 北=0 顺时针递增) */
+  int32_t  raw_x;         /* X 轴原始值(调试/自检显示用) */
+  int32_t  raw_y;         /* Y 轴原始值(调试/自检显示用) */
+  int32_t  raw_z;         /* Z 轴原始值(调试/自检显示用) */
+  int32_t  valid;         /* 1=QMC6309 在线且数据有效 0=离线(显示 "--") */
+} app_compass_msg_t;
+
+/* 指南针数据队列(应用层共享, 由 app_main 创建) */
+extern QueueHandle_t g_compass_queue;
+
 #ifdef __cplusplus
 }
 #endif
