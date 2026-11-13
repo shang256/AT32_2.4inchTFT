@@ -1,5 +1,6 @@
 --cpu=Cortex-M4.fp.sp
 ".\objects\app_main.o"
+".\objects\app_state.o"
 ".\objects\app_ui.o"
 ".\objects\app_ui_img_demo.o"
 ".\objects\app_usb_upgrade.o"

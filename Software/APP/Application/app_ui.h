@@ -14,8 +14,30 @@ extern "C" {
 
 #include "lvgl.h"
 
-void app_ui_init(void);                                          /* 创建演示界面(在 LVGL 上下文调用一次) */
-void app_ui_encoder_event(int32_t delta, int32_t push_pressed, int32_t hold_ms);  /* 编码器事件处理(含长按关机进度, 仅 LVGL 任务调用) */
+/* ---------------- 页面定义 ---------------- */
+// UI 页面集合: 页面创建统一在 app_ui_page_create 完成,
+// 加载/切换由状态机(app_state.c)的 on_enter 回调驱动
+typedef enum
+{
+  APP_UI_PAGE_LOGO = 0,     /* 开机 LOGO 页(开机流程约 1.5s 自动跳过) */
+  APP_UI_PAGE_DASH,         /* 骑行仪表盘页(默认运行页) */
+  APP_UI_PAGE_COMPASS,      /* 指南针页(M 键循环切换) */
+  APP_UI_PAGE_NUM
+} app_ui_page_id_t;
+
+/* ---------------- 页面切换动画方向 ---------------- */
+// 页面加载动画方向: 状态机按跳转方向选择(仪表->指南针左滑, 反之右滑)
+typedef enum
+{
+  APP_UI_ANIM_NONE = 0,     /* 无动画直接加载(LOGO/首次进入) */
+  APP_UI_ANIM_LEFT,         /* 左滑过场(进入指南针页) */
+  APP_UI_ANIM_RIGHT         /* 右滑过场(返回仪表盘页) */
+} app_ui_page_anim_t;
+
+void app_ui_page_create(void);                                  /* 创建全部页面控件(在 main 调度器启动前调用一次) */
+void app_ui_page_show(app_ui_page_id_t page, app_ui_page_anim_t anim);  /* 加载指定页面(含切换动画, 仅状态机/LVGL 任务调用) */
+void app_ui_encoder_rotate(int32_t delta);                      /* 编码器旋转事件: 调节背光亮度(仅 LVGL 任务调用) */
+void app_ui_power_hint(int32_t hold_ms);                        /* 长按关机进度提示(>=800 显示提示, >=3000 显示关机, 0 隐藏, 仅 LVGL 任务调用) */
 void app_ui_sgp30_update(uint32_t eco2, uint32_t tvoc, uint32_t valid);  /* SGP30 数据刷新(仅 LVGL 任务调用) */
 void app_ui_env_update(int32_t temp_x10, int32_t hum_x10, int32_t press_x10,
                        int32_t altitude, int32_t aht_valid, int32_t bmp_valid);  /* 环境传感器(AHT20/BMP280)数据刷新, 仅 LVGL 任务调用 */

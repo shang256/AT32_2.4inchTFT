@@ -11,9 +11,11 @@
   *     指示弧颜色随亮度三段渐变(20% 紫 -> 60% 青 -> 100% 荧光绿)；
   *   - 弧心大号百分比数字：旋转时上抛-回弹弹跳动画, 颜色与弧同步渐变；
   *   - 弧心下方两行小字显示 SGP30 的 eCO2/TVOC 实时值；
-  *   - 屏幕下部按钮(BTN, 悬于顶层跨页面常驻)：点按编码器切换页面——
-  *     0=仪表页 / 1=指南针页, lv_scr_load_anim 横向滑动过场动画,
+  *   - 屏幕下部按钮(BTN, 悬于顶层跨页面常驻)：状态机(app_state.c)在
+  *     仪表/指南针页间切换时刷新按钮——0=仪表页(灰) 1=指南针页(荧光绿),
   *     按钮背景色 300ms 渐变过渡(灰<->荧光绿) + 发光脉冲提示当前页；
+  *   - 开机 LOGO 页(独立 screen)：品牌字样 + 装饰圆环, 由状态机在
+  *     开机流程加载(约 1.5s 后自动切仪表页, 短按可跳过)；
   *   - 指南针页(独立 screen)：180x180 lv_meter 表盘(N 在顶部, 顺时针
   *     递增), 红色指针指向磁北, 中心显示 0.1° 精度航向角与 16 方位名,
   *     底部显示 X/Y 原始值(硬铁校准排查用), 数据来自 QMC6309 磁力计；
@@ -54,7 +56,10 @@ static lv_obj_t  *s_power_label;     // 长按关机进度提示(默认隐藏)
 static lv_obj_t  *s_demo_img;        // 仪表页面 demo 仪表盘图背景(240x240 整屏)
 static lv_obj_t  *s_hr_label;        // MAX30102 心率/血氧显示行(顶部居中)
 
-/* 页面切换: 双 screen 架构, 按钮与关机提示挂顶层(跨页面常驻) */
+/* 页面切换: 三 screen 架构(LOGO/仪表/指南针, 页面加载由状态机驱动),
+   按钮与关机提示挂顶层(跨页面常驻) */
+static lv_obj_t  *s_scr_logo;         // 开机 LOGO 页 screen(状态机开机流程加载)
+static lv_obj_t  *s_logo_title_label; // LOGO 页品牌字样(创建后无需外部刷新)
 static lv_obj_t  *s_scr_dash;        // 仪表页 screen(默认页)
 static lv_obj_t  *s_scr_compass;     // 指南针页 screen
 static lv_obj_t  *s_compass_meter;   // 指南针 lv_meter 表盘对象
@@ -666,17 +671,79 @@ static void ui_compass_screen_create(void)
 }
 
 /*********************************************************************
- * 函 数 名: app_ui_init
+ * 函 数 名: ui_logo_screen_create
  * 入口参数: 无
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 创建交互演示界面(仪表页 + 指南针页双 screen 架构)
+ * 函数功能: 创建开机 LOGO 页面(独立 screen): 品牌字样 + 装饰圆环 +
+ *           副标题, 不占用图片资源(零 Flash 大资源方案)
+ * 说    明: 1. 本页面创建后不加载, 由状态机开机流程(POWER_ON 态
+ *              on_enter)经 app_ui_page_show() 加载, 显示约 1.5s 后
+ *              自动切骑行仪表盘(短按可跳过);
+ *           2. 装饰圆环为 270° 圆头弧(与仪表页同语言), 静态无动画
+ *              (LOGO 仅 1.5s, 动画来不及铺开);
+ *           3. 页内控件创建后无需外部刷新, 全部为局部句柄。
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月13日
+ *     修改内容: 新增函数(状态机开机 LOGO 需求)
+ **********************************************************************/
+static void ui_logo_screen_create(void)
+{
+  lv_obj_t *ring;                                       // 装饰圆环(局部句柄, 无外部刷新)
+  lv_obj_t *sub;                                        // 副标题(局部句柄)
+
+  /* ---- Step1: 创建独立 screen, 深色背景 ---- */
+  s_scr_logo = lv_obj_create(NULL);
+  lv_obj_set_style_bg_color(s_scr_logo, lv_color_hex(0x0D0D14), 0);
+
+  /* ---- Step2: 装饰圆环(160x160 居中, 270° 圆头弧, 荧光绿渐变末端) ---- */
+  ring = lv_arc_create(s_scr_logo);
+  lv_obj_set_size(ring, 160, 160);
+  lv_obj_center(ring);
+  lv_arc_set_rotation(ring, 135);
+  lv_arc_set_bg_angles(ring, 0, 270);
+  lv_arc_set_range(ring, 0, 100);
+  lv_arc_set_value(ring, 100);                          /* 满弧: 开机"能量充满"意象 */
+  lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_arc_width(ring, 6, LV_PART_MAIN);
+  lv_obj_set_style_arc_width(ring, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_arc_color(ring, lv_color_hex(0x26262E), LV_PART_MAIN);
+  lv_obj_set_style_arc_color(ring, lv_color_hex(0x64DD17), LV_PART_INDICATOR);
+  lv_obj_set_style_arc_rounded(ring, TRUE, LV_PART_MAIN);
+  lv_obj_set_style_arc_rounded(ring, TRUE, LV_PART_INDICATOR);
+  lv_obj_remove_style(ring, NULL, LV_PART_KNOB);
+
+  /* ---- Step3: 品牌字样(环心, 大号) ---- */
+  s_logo_title_label = lv_label_create(ring);
+  lv_label_set_text(s_logo_title_label, "AT32");
+  lv_obj_set_style_text_color(s_logo_title_label, lv_color_white(), 0);
+  lv_obj_set_style_text_font(s_logo_title_label, &lv_font_montserrat_28, 0);
+  lv_obj_center(s_logo_title_label);
+
+  /* ---- Step4: 副标题(环下方, 小号) ---- */
+  sub = lv_label_create(s_scr_logo);
+  lv_label_set_text(sub, "Cycling Dashboard");
+  lv_obj_set_style_text_color(sub, lv_color_hex(0x9E9E9E), 0);
+  lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
+  lv_obj_align(sub, LV_ALIGN_CENTER, 0, 92);
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_page_create
+ * 入口参数: 无
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 创建全部页面控件(LOGO/仪表/指南针三 screen 架构)
  * 说    明: 必须在 LVGL 任务首次刷新前调用(调度器启动前的 main 中
- *           调用, 创建阶段无并发访问风险);
- *           布局(240x240): 仪表页: 顶部标题+自检行 -> 中央 120x120
- *           环形仪表盘(弧心嵌大号百分比与 eCO2/TVOC 两行小字) ->
- *           环境传感器两行 -> 底部操作提示; 指南针页: 180x180 表盘;
- *           页面切换按钮与长按关机提示挂 lv_layer_top() 跨页面常驻
+ *           调用, 创建阶段无并发访问风险); 本函数只创建不加载,
+ *           首屏由状态机 app_state_init() 的开机流程(POWER_ON 态
+ *           加载 LOGO 页)决定;
+ *           布局(240x240): LOGO 页: 装饰圆环+品牌字样; 仪表页: 顶部
+ *           标题+自检行 -> 中央 120x120 环形仪表盘(弧心嵌大号百分比
+ *           与 eCO2/TVOC 两行小字) -> 环境传感器两行 -> 底部操作提示;
+ *           指南针页: 180x180 表盘; 页面切换按钮与长按关机提示挂
+ *           lv_layer_top() 跨页面常驻
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
@@ -690,8 +757,12 @@ static void ui_compass_screen_create(void)
  *     修改日期: 2026年11月12日
  *     修改内容: 重构为双 screen 架构, 点按切换仪表/指南针页面,
  *               按钮/关机提示移至顶层(QMC6309 指南针页面需求)
+ *     修改日期: 2026年11月13日
+ *     修改内容: 更名 app_ui_init->app_ui_page_create 并新增 LOGO 页,
+ *               页面加载职责移交状态机(状态机需求); 删除函数内
+ *               首屏加载, 由 app_state_init() 开机流程决定首屏
  **********************************************************************/
-void app_ui_init(void)
+void app_ui_page_create(void)
 {
   /* ---- Step0: 初始化背光编码器变速器实例(变速逻辑见 encoder_accel 模块) ---- */
   encoder_accel_init(&s_bl_accel);
@@ -796,11 +867,13 @@ void app_ui_init(void)
   lv_obj_align(s_power_label, LV_ALIGN_TOP_MID, 0, 8);
   lv_obj_add_flag(s_power_label, LV_OBJ_FLAG_HIDDEN);
 
-  /* ---- Step6.3: 创建指南针页面(独立 screen, 点按按钮时切入) ---- */
+  /* ---- Step6.3: 创建指南针页面(独立 screen, 状态机 M 键切入) ---- */
   ui_compass_screen_create();
 
-  /* ---- Step7: 加载仪表页为当前屏(无动画)并刷新初始显示 ---- */
-  lv_scr_load(s_scr_dash);
+  /* ---- Step6.4: 创建开机 LOGO 页面(独立 screen, 状态机开机流程加载) ---- */
+  ui_logo_screen_create();
+
+  /* ---- Step7: 刷新初始显示(不加载首屏, 首屏由状态机开机流程决定) ---- */
   app_ui_bl_refresh();
   app_ui_btn_apply();
 }
@@ -839,20 +912,86 @@ static void encoder_apply_delta(int32_t delta)
 }
 
 /*********************************************************************
- * 函 数 名: app_ui_encoder_event
- * 入口参数: delta        编码器旋转增量(4 倍频计步, 正=顺时针)
- *           push_pressed 按键"松开->按下"沿事件(1=有)
- *           hold_ms      当前连续按下时长(ms): >=3000 显示"Power off",
- *                        >=800 显示保持提示, 0=取消提示
+ * 函 数 名: app_ui_page_show
+ * 入口参数: page    目标页面(LOGO/仪表盘/指南针)
+ *           anim    切换动画方向(无动画/左滑/右滑)
  * 出口参数: 无
  * 返 回 值: void
- * 函数功能: 处理编码器事件: 旋转调节背光亮度(弧形仪表动画联动),
- *           点按切换仪表/指南针页面(滑动过场+按钮渐变动画),
- *           长按显示关机进度提示
+ * 函数功能: 加载指定页面为当前屏(由状态机 on_enter 回调调用):
+ *           左滑=进指南针页, 右滑=回仪表盘页, 无动画=LOGO/首次进入;
+ *           仪表/指南针切换同步播放按钮渐变动画, LOGO 页按钮按
+ *           仪表态显示(开机流程结束后默认进仪表盘)
+ * 说    明: 仅允许 LVGL 任务调用(状态机回调运行于 lvgl_task 上下文);
+ *           三 screen 常驻不销毁(auto_del=FALSE), 重复加载同一页
+ *           安全; 无动画路径 time=0 等效 lv_scr_load
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月13日
+ *     修改内容: 新增函数(状态机页面加载需求)
+ **********************************************************************/
+void app_ui_page_show(app_ui_page_id_t page, app_ui_page_anim_t anim)
+{
+  lv_obj_t           *scr;                              // 目标 screen 句柄
+  lv_scr_load_anim_t  dir;                              // LVGL 切换动画类型
+  uint32_t            time;                             // 动画时长(NONE 时 0)
+
+  /* ---- Step1: 按目标页面取 screen 句柄并同步按钮页面索引 ---- */
+  switch(page)
+  {
+    case APP_UI_PAGE_LOGO:
+      scr = s_scr_logo;
+      s_btn_state = 0U;                                 /* LOGO 后默认进仪表页, 按钮按仪表态显示 */
+      break;
+    case APP_UI_PAGE_COMPASS:
+      scr = s_scr_compass;
+      s_btn_state = 1U;
+      break;
+    case APP_UI_PAGE_DASH:
+    default:
+      scr = s_scr_dash;
+      s_btn_state = 0U;
+      break;
+  }
+
+  /* ---- Step2: 按动画方向加载页面(250ms 滑动过场, 屏幕常驻) ---- */
+  switch(anim)
+  {
+    case APP_UI_ANIM_LEFT:
+      dir = LV_SCR_LOAD_ANIM_MOVE_LEFT;
+      time = 250U;
+      break;
+    case APP_UI_ANIM_RIGHT:
+      dir = LV_SCR_LOAD_ANIM_MOVE_RIGHT;
+      time = 250U;
+      break;
+    case APP_UI_ANIM_NONE:
+    default:
+      dir = LV_SCR_LOAD_ANIM_NONE;
+      time = 0U;
+      break;
+  }
+  lv_scr_load_anim(scr, dir, time, 0, FALSE);
+
+  /* ---- Step3: 同步顶层切换按钮外观(带动画页播放渐变, 否则立即应用) ---- */
+  if(anim == APP_UI_ANIM_NONE)
+  {
+    app_ui_btn_apply();
+  }
+  else
+  {
+    app_ui_btn_refresh();
+  }
+}
+
+/*********************************************************************
+ * 函 数 名: app_ui_encoder_rotate
+ * 入口参数: delta    编码器旋转增量(4 倍频计步, 正=顺时针)
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 处理编码器旋转事件: 调节背光亮度(弧形仪表动画联动)
  * 说    明: 仅允许 LVGL 任务调用(app_main.c 的 lvgl_task 队列消费处);
  *           旋转经 encoder_apply_delta 变速映射: 慢速每格 1% 精准,
- *           快速按速度放大步进(详见该函数); 长按进度由 encoder_task
- *           每 20ms 随事件携带, 松开归 0 时自动隐藏提示(取消关机)
+ *           快速按速度放大步进(详见该函数)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
@@ -862,31 +1001,40 @@ static void encoder_apply_delta(int32_t delta)
  *               旋转/点按路径升级为弧形仪表+渐变+弹跳动画(酷炫动画需求);
  *     修改日期: 2026年11月12日
  *     修改内容: 点按语义由按钮翻转改为页面切换(仪表/指南针)
+ *     修改日期: 2026年11月13日
+ *     修改内容: 更名 app_ui_encoder_event->app_ui_encoder_rotate,
+ *               签名精简为仅旋转增量; 点按切页移交状态机、长按提示
+ *               移交 app_ui_power_hint(状态机需求)
  **********************************************************************/
-void app_ui_encoder_event(int32_t delta, int32_t push_pressed, int32_t hold_ms)
+void app_ui_encoder_rotate(int32_t delta)
 {
   /* ---- Step1: 旋转增量 -> 变速背光亮度, 仪表盘动画联动 ---- */
   if(delta != 0)
   {
     encoder_apply_delta(delta);
   }
+}
 
-  /* ---- Step2: 点按沿事件 -> 切换页面(滑动过场)并刷新按钮动画 ---- */
-  if(push_pressed != 0)
-  {
-    s_btn_state = (uint8_t)(s_btn_state ? 0 : 1);
-    if(s_btn_state != 0)
-    {
-      lv_scr_load_anim(s_scr_compass, LV_SCR_LOAD_ANIM_MOVE_LEFT, 250, 0, FALSE);
-    }
-    else
-    {
-      lv_scr_load_anim(s_scr_dash, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 250, 0, FALSE);
-    }
-    app_ui_btn_refresh();
-  }
-
-  /* ---- Step3: 长按关机进度提示(达阈值提示关机, 松开归 0 自动隐藏) ---- */
+/*********************************************************************
+ * 函 数 名: app_ui_power_hint
+ * 入口参数: hold_ms   当前连续按下时长(ms): >=3000 显示"Power off",
+ *                     >=800 显示保持提示, 0=取消提示(松开/开机复位)
+ * 出口参数: 无
+ * 返 回 值: void
+ * 函数功能: 长按关机进度提示(顶层常驻标签, 各页面行为一致):
+ *           达 3s 阈值显示关机提示, 超过 800ms 显示保持提示,
+ *           归 0 自动隐藏
+ * 说    明: 仅允许 LVGL 任务调用(状态机按键事件分发入口调用);
+ *           提示标签挂 lv_layer_top(), LOGO/仪表/指南针页均可见;
+ *           真实停机序列由 encoder_task 执行, 本函数只管显示
+ * 修改历史:
+ *   1.修改人: CodeBuddy
+ *     修改日期: 2026年11月13日
+ *     修改内容: 新增函数(自 app_ui_encoder_event 拆出, 状态机需求)
+ **********************************************************************/
+void app_ui_power_hint(int32_t hold_ms)
+{
+  /* ---- Step1: 按保持时长分级切换提示文案 ---- */
   if(hold_ms >= (int32_t)ENC_PUSH_LONG_PRESS_MS)
   {
     lv_label_set_text(s_power_label, "Power off...");
@@ -895,7 +1043,12 @@ void app_ui_encoder_event(int32_t delta, int32_t push_pressed, int32_t hold_ms)
   {
     lv_label_set_text(s_power_label, "Hold 3s: power off");
   }
+  else
+  {
+    /* 未达提示阈值: 保持文案不变, 由 Step2 统一隐藏 */
+  }
 
+  /* ---- Step2: 超过提示阈值显示, 归 0 自动隐藏(取消关机) ---- */
   if(hold_ms >= (int32_t)UI_PWR_HINT_MS)
   {
     lv_obj_clear_flag(s_power_label, LV_OBJ_FLAG_HIDDEN);

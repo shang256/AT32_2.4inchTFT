@@ -25,6 +25,7 @@
 
 #include "app_main.h"
 #include "app_ui.h"
+#include "app_state.h"
 #include "app_usb_upgrade.h"
 #include "driver_delay.h"
 #include "driver_lcd_st7789.h"
@@ -124,8 +125,8 @@ static void system_clock_config(void)
  *           "Power off"提示; 2) 400ms 后熄背光; 3) 等待松手——
  *           EXINT3 以按下下降沿唤醒, 松手后再停机才可获得有效边沿;
  *           4) 停机(DEEPSLEEP)期间 RAM/屏幕 GRAM 保持, PUSH 按下
- *           唤醒后函数返回: 恢复背光并发送 hold=0 消息隐藏关机
- *           提示, 任务循环继续(原界面原地恢复, 非复位重启)
+ *           唤醒后函数返回: 恢复背光并投递唤醒开机事件(状态机重走
+ *           LOGO->仪表盘 开机流程, 非原地恢复旧界面), 任务循环继续
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
@@ -135,6 +136,10 @@ static void system_clock_config(void)
  *               待机方案由 STANDBY 改为 DEEPSLEEP(不改 PUSH 接线)
  *     修改日期: 2026年11月11日
  *     修改内容: 循环新增 USB 升级重启请求检测(APP 在线升级需求)
+ *     修改日期: 2026年11月13日
+ *     修改内容: 唤醒后由"原地恢复旧界面"改为投递 wakeup 开机事件,
+ *               状态机重走 LOGO 开机流程(状态机需求); 常规周期显式
+ *               清零 wakeup 字段防止残留
  **********************************************************************/
 __NO_RETURN static void encoder_task(void *arg)
 {
@@ -154,6 +159,7 @@ __NO_RETURN static void encoder_task(void *arg)
     msg.delta = encoder_get_delta();
     msg.push_pressed = encoder_push_rising_edge();
     msg.hold_ms = (int32_t)encoder_push_hold_ms();
+    msg.wakeup = 0;                                 /* 常规周期无唤醒事件(仅 Step2.1 置 1) */
 
     /* ---- Step2: 长按达 3s -> 执行关机序列 ---- */
     if(encoder_push_long_press() != 0)
@@ -170,13 +176,15 @@ __NO_RETURN static void encoder_task(void *arg)
       lowpower_power_down();                          /* 停机, PUSH 按下唤醒 */
 
       /* Step2.1 唤醒恢复: 背光回到关机前亮度(s_percent 在 RAM 中保持),
-              并立即取消 UI 关机提示(不等 TMR7 重新计时清零) */
+              并投递"停机唤醒开机事件"——状态机收到后重走完整开机流程
+              (清关机提示 -> LOGO -> 仪表盘), 替代原先的"原界面原地恢复" */
       backlight_init();                               /* 恢复 PB1 复用 + PWM 输出 */
       msg.delta = 0;
       msg.push_pressed = 0;
       msg.hold_ms = 0;
-      xQueueSend(g_encoder_queue, &msg, 0);           /* UI 隐藏 "Power off..." */
-      s_prev_hold = 0;                                /* 归零沿已手动处理 */
+      msg.wakeup = 1;                                 /* 开机事件: 状态机 OFF->POWER_ON->LOGO */
+      xQueueSend(g_encoder_queue, &msg, 0);           /* LVGL 任务消费后启动开机流程 */
+      s_prev_hold = 0;                                /* 归零沿已随事件携带, 无需补发 */
     }
 
     /* ---- Step3: 有事件才投递(hold 从非 0 归 0 也发, 供 UI 取消提示) ---- */
@@ -440,14 +448,23 @@ __NO_RETURN static void i2c_sensor_task(void *arg)
  * 出口参数: 无
  * 返 回 值: void
  * 函数功能: LVGL 刷图专用线程: 周期执行 lv_timer_handler 驱动
- *           刷新/动画/输入处理, 并转发编码器/传感器事件给 UI 层
+ *           刷新/动画/输入处理, 并转发编码器/传感器事件:
+ *           1) 停机唤醒开机事件 -> 状态机 app_state_wakeup();
+ *           2) 旋转增量 -> 背光调节(持续交互, 非状态跳转);
+ *           3) 按键沿/长按进度 -> 状态机语义事件分发(短按/长按),
+ *              由当前状态注册的按键函数指针处理;
+ *           4) 周期调用 app_state_tick() 驱动开机过渡/LOGO 计时跳转
  * 说    明: LVGL 非线程安全, 所有 UI 访问都收敛在本任务
- *           (编码器/SGP30 事件经队列从各自任务送入)
+ *           (编码器/传感器事件经队列从各自任务送入)
  * 修改历史:
  *   1.修改人: CodeBuddy
  *     修改日期: 2026年10月14日
  *     修改内容: 新增函数(FreeRTOS 引入);
  *             2026年10月15日新增 SGP30 队列消费转发
+ *     修改日期: 2026年11月13日
+ *     修改内容: 按键事件转发重构为状态机分发(app_state_key_event),
+ *               新增 app_state_tick 周期调度与 wakeup 开机事件转发
+ *               (状态机需求); 旋转调背光路径改调 app_ui_encoder_rotate
  **********************************************************************/
 __NO_RETURN static void lvgl_task(void *arg)
 {
@@ -456,6 +473,7 @@ __NO_RETURN static void lvgl_task(void *arg)
   app_env_msg_t     emsg;                         // 从队列收到的环境传感器数据
   app_hr_msg_t      hmsg;                         // 从队列收到的心率血氧数据
   app_compass_msg_t cmsg;                         // 从队列收到的指南针数据
+  int32_t           prev_hold = 0;                // 上一条消息的按下时长(检测归零沿)
   (void)arg;
 
   while(1)
@@ -463,7 +481,38 @@ __NO_RETURN static void lvgl_task(void *arg)
     /* ---- Step1: 非阻塞收取编码器事件(可能一次积压多条, 全部处理) ---- */
     while(xQueueReceive(g_encoder_queue, &msg, 0) == pdTRUE)
     {
-      app_ui_encoder_event(msg.delta, msg.push_pressed, msg.hold_ms);
+      /* Step1.1: 停机唤醒开机事件(状态机 OFF->POWER_ON, 重走 LOGO 流程) */
+      if(msg.wakeup != 0)
+      {
+        app_state_wakeup();
+      }
+
+      /* Step1.2: 旋转增量 -> 背光调节(持续交互, 不属于状态跳转) */
+      if(msg.delta != 0)
+      {
+        app_ui_encoder_rotate(msg.delta);
+      }
+
+      /* Step1.3: 按下沿事件 -> 状态机短按语义事件(按键触发函数指针分发) */
+      if(msg.push_pressed != 0)
+      {
+        app_state_key_event(APP_KEY_SHORT_PRESS, (uint32_t)msg.hold_ms);
+      }
+
+      /* Step1.4: 长按事件(保持中/达阈值/松开归零) -> 状态机分发
+         (归零沿也转发: 状态机统一取消关机进度提示) */
+      if((msg.hold_ms != 0) || (prev_hold != 0))
+      {
+        if(msg.hold_ms >= (int32_t)ENC_PUSH_LONG_PRESS_MS)
+        {
+          app_state_key_event(APP_KEY_LONG_PRESS, (uint32_t)msg.hold_ms);
+        }
+        else
+        {
+          app_state_key_event(APP_KEY_HOLD_PROGRESS, (uint32_t)msg.hold_ms);
+        }
+      }
+      prev_hold = msg.hold_ms;
     }
 
     /* ---- Step2: 非阻塞收取 SGP30 传感器数据, 转发 UI 显示 ---- */
@@ -492,10 +541,13 @@ __NO_RETURN static void lvgl_task(void *arg)
                             cmsg.raw_z, cmsg.valid);
     }
 
-    /* ---- Step3: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
+    /* ---- Step3: 状态机周期调度(开机过渡延时/LOGO 到时自动跳转) ---- */
+    app_state_tick();
+
+    /* ---- Step4: 执行 LVGL 刷新(脏区绘制 + flush 到屏幕) ---- */
     lv_timer_handler();
 
-    /* ---- Step4: 5ms 周期, 平衡响应速度与 CPU 占用 ---- */
+    /* ---- Step5: 5ms 周期, 平衡响应速度与 CPU 占用 ---- */
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -518,6 +570,10 @@ __NO_RETURN static void lvgl_task(void *arg)
  *     修改内容: 新增 MAX30102 心率血氧任务与队列(第五应用任务);
  *               同日合并 SGP30/ENV/HR 三任务为单一 i2c_sensor_task
  *               (单任务独占 I2C 总线, 节省约 2.5KB 任务栈)
+ *     修改日期: 2026年11月13日
+ *     修改内容: 恢复上电默认停机按键开机(lowpower_init/boot_wait);
+ *               app_ui_init 更名为 app_ui_page_create 并新增
+ *               app_state_init 状态机启动(状态机需求)
  **********************************************************************/
 int main(void)
 {
@@ -532,10 +588,12 @@ int main(void)
 
   /* ---- Step1.1: 低功耗开机管理(整机电源逻辑) ----
      默认关机态: 停机(DEEPSLEEP)等待 PUSH 按下(PB3=EXINT3 下降沿)
-     唤醒, 函数返回即"开机", main 继续正常初始化流程;
-     按复位/上电会再次进入停机(默认关机态) */
-//  lowpower_init();
-//  lowpower_boot_wait();
+     唤醒, 函数返回即"按键按下开机", main 继续正常初始化流程,
+     状态机随后走 LOGO->仪表盘 开机流程;
+     按复位/上电会再次进入停机(默认关机态);
+     (调试期如需跳过按键开机, 注释下面两行即可) */
+  lowpower_init();
+  lowpower_boot_wait();
 
   /* ---- Step2: 驱动层初始化: 屏幕 / 背光 PWM / 编码器 ---- */
   LCD_Init();
@@ -549,8 +607,11 @@ int main(void)
   lv_init();
   lv_port_disp_init();
 
-  /* ---- Step4: 应用层初始化: 创建交互演示 UI(必须在 LVGL 任务内首次刷新前) ---- */
-  app_ui_init();
+  /* ---- Step4: 应用层初始化: 创建全部页面控件(LOGO/仪表/指南针,
+     必须在 LVGL 任务首次刷新前)并启动状态机(首屏=开机 LOGO 页,
+     约 1.5s 后自动进骑行仪表盘) ---- */
+  app_ui_page_create();
+  app_state_init();
 
   /* ---- Step5: 创建事件队列与三个应用任务 ---- */
   g_encoder_queue = xQueueCreate(8, sizeof(app_encoder_msg_t));
